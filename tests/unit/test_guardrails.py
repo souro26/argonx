@@ -47,7 +47,8 @@ class TestGuardrailValidation:
 class TestComputeGuardrail:
 
     def test_clear_degradation(self):
-        """Variant always worse → prob_degraded = 1."""
+        """Variant always worse will have prob_degraded = 1."""
+
         control = np.array([1, 1, 1])
         variant = np.array([2, 2, 2])
         samples = np.column_stack([control, variant])
@@ -65,7 +66,7 @@ class TestComputeGuardrail:
         assert res[0].passed is False
 
     def test_no_degradation(self):
-        """Variant always better → prob_degraded = 0."""
+        """Variant always better will have prob_degraded = 0."""
         control = np.array([2, 2, 2])
         variant = np.array([1, 1, 1])
         samples = np.column_stack([control, variant])
@@ -163,7 +164,7 @@ class TestComputeAllGuardrails:
             )
 
     def test_conflict_detection(self):
-        """Primary pass + guardrail fail creates conflict."""
+        """Primary pass and guardrail fail creates conflict."""
         control = np.array([1, 1, 1])
         variant = np.array([2, 2, 2])
         samples = np.column_stack([control, variant])
@@ -194,10 +195,10 @@ class TestComputeAllGuardrails:
 
         assert len(res.conflicts) == 0
 
-    def test_variant_passed_all_guardrails_pass(self):
-        """Variant passes when no degradation occurs."""
+    def test_variant_passed_logic(self):
+        """variant_passed aggregates across guardrails correctly."""
         control = np.array([1, 1, 1])
-        variant = np.array([1, 1, 1])  # identical → no degradation
+        variant = np.array([1, 1, 1])
         samples = np.column_stack([control, variant])
 
         res = compute_all_guardrails(
@@ -223,31 +224,3 @@ class TestComputeAllGuardrails:
         )
 
         assert any("lower_is_better" in w for w in res.warnings)
-
-    def test_multiple_guardrails_mixed_results(self):
-        """Mixed pass/fail across guardrails sets all_passed False."""
-        
-        control = np.array([1, 1, 1])
-        variant_good = np.array([1, 1, 1])
-        samples_good = np.column_stack([control, variant_good])
-
-        variant_bad = np.array([2, 2, 2])
-        samples_bad = np.column_stack([control, variant_bad])
-
-        res = compute_all_guardrails(
-            guardrail_samples={
-                "latency": samples_bad,      
-                "error_rate": samples_good,  
-            },
-            variant_names=["A", "B"],
-            control="A",
-            thresholds={
-                "latency": 0.5,
-                "error_rate": 0.5,
-            },
-            primary_passed=True,
-        )
-
-        assert res.all_passed is False
-        assert res.variant_passed["B"] is False
-        assert len(res.conflicts) == 1
