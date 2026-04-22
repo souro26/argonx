@@ -1,6 +1,4 @@
 """
-argonx/results/plots.py
-
 Decision-facing visualizations for the Bayesian A/B decision engine.
 
 Five plots, all matplotlib:
@@ -14,12 +12,15 @@ Top-level convenience:
     plot_all              — all five in one figure (2x3 grid, last cell empty)
 
 All functions accept posterior samples and result objects directly.
-None of these functions are methods on Results — they are called directly
-from notebooks. Results.plot() is deliberately not implemented.
+Call via result.plot() for automatic config unpacking:
 
-Usage:
-    from argonx.results.plots import plot_all
-    plot_all(samples, result)
+    result = exp.run()
+    fig = result.plot(samples, metric_name="revenue")
+
+Or call individual plot functions directly if you need custom composition:
+
+    from argonx.results.plots import plot_posteriors
+    plot_posteriors(samples, variant_names)
 """
 
 from __future__ import annotations
