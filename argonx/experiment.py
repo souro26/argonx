@@ -161,9 +161,8 @@ def _fit_and_sample(
     if hasattr(model, "random_seed") and random_seed is not None:
         model.random_seed = random_seed
 
-    model.fit(variant_data, n_draws=n_draws)
-    return model.sample()
-
+    model.fit(variant_data)
+    return model.sample_posterior(n_draws)
 
 class Experiment:
     """User-facing API for A/B experiments."""
@@ -194,7 +193,7 @@ class Experiment:
             segment_col, control
         )
 
-        self._variant_names = sorted(data[variant_col].unique())
+        self._variant_names = sorted(data[variant_col].unique().tolist())
         self._control = control or self._variant_names[0]
 
     def run(
@@ -260,7 +259,7 @@ class Experiment:
             config=full_config,
         )
 
-        return Results(decision)
+        return Results(decision, config = full_config)
 
     def __repr__(self):
         return (

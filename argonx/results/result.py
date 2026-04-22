@@ -4,12 +4,14 @@ import numpy as np
 import pandas as pd
 
 from argonx.decision_rules.engine import DecisionResult
+from argonx.results.plots import plot_all
 
 
 class Results:
 
-    def __init__(self, decision: DecisionResult) -> None:
+    def __init__(self, decision: DecisionResult, config: dict = None) -> None:
         self._d = decision
+        self._config = config or {}
 
     def __getattr__(self, name: str):
         try:
@@ -188,7 +190,7 @@ class Results:
         self,
         samples: np.ndarray,
         metric_name: str = "metric",
-        rope_bounds: tuple[float, float] = (-0.01, 0.01),
+        rope_bounds: tuple[float, float] | None = None, 
         figsize: tuple[int, int] = (18, 11),
         suptitle: str | None = None,
     ):
@@ -221,7 +223,9 @@ class Results:
         fig = result.plot(samples, metric_name="revenue")
         fig.savefig("experiment_report.png", dpi=150, bbox_inches="tight")
         """
-        from argonx.results.plots import plot_all
+
+        if rope_bounds is None:
+            rope_bounds = self._config.get("rope_bounds", (-0.01, 0.01))
 
         d = self._d
 
@@ -236,8 +240,8 @@ class Results:
             rope_bounds=rope_bounds,
             metric_name=metric_name,
             hdi_prob=d.metrics.lift.hdi_prob,
-            prob_best_threshold=0.95,
-            loss_threshold=0.01, 
+            prob_best_threshold=self._config.get("prob_best_strong", 0.95),
+            loss_threshold=self._config.get("expected_loss_max", 0.01), 
             figsize=figsize,
             suptitle=suptitle,
         )
