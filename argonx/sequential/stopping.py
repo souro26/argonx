@@ -1,94 +1,3 @@
-"""
-Bayesian sequential stopping rules for the argonx decision engine.
-
-Bayesian sequential testing is mathematically valid at any point in time.
-Frequentist statistics breaks if you peek early — the false positive rate
-inflates. Bayesian expected-loss-based stopping does not have this problem.
-Stopping occurs when the evidence is strong enough, not when a sample size
-target is hit.
-
-Production design notes
------------------------
-This module mirrors what Spotify, Netflix, and Airbnb actually implement in
-their experimentation platforms. Key additions over a naive implementation:
-
-1. Burn-in gate — data quality concern. Early experiment data is polluted by
-   novelty effects, cache warming, and bot traffic. Inference on day-1 data
-   produces unreliable posteriors. The stopping rule refuses to evaluate until
-   burn_in_users are reached per variant.
-
-2. Minimum sample size gate — statistical power concern, separate from burn-in.
-   Even after burn-in, a stopping signal on 200 users is unreliable. A hard
-   floor ensures the posterior has enough observations to contract meaningfully.
-
-3. Futility stopping — symmetric with winner stopping. If enough data has
-   accumulated and the effect is consistently inside the ROPE, the correct
-   call is to stop and record no difference — not to run indefinitely.
-
-4. Traffic imbalance detection — if variant_b is receiving 30% of traffic
-   instead of the intended 50%, inference is biased. The rule flags this and
-   can optionally block stopping until balance is restored.
-
-5. Novelty effect warning — behavioral metrics (CTR, session length, revenue)
-   inflate in the first 1-2 weeks as users react to change. The rule warns
-   when the experiment is younger than a configurable threshold.
-
-6. Calendar-time estimates — "2,400 more users needed" is not actionable alone.
-   "At current traffic rate, that is approximately 4 days" is. The rule
-   optionally converts user estimates to calendar days per variant.
-
-7. Per-variant estimates — variants often have unequal traffic splits. The
-   estimate is computed per variant from its own n and rate, not uniformly.
-
-No values are hardcoded inside logic functions. All thresholds live in
-module-level constants (overridable via function arguments) or are passed
-explicitly. The safety factor on user estimates is a named constant.
-
-Stopping criteria
------------------
-Safe to stop (winner) when ALL hold:
-    - burn_in_users reached per variant
-    - min_sample_size reached per variant
-    - min_checkpoints evaluations done
-    - expected_loss of best variant < loss_threshold
-    - P(best) of best variant >= prob_best_min
-    - traffic balanced, OR imbalance_blocks_stopping=False
-
-Safe to stop (futility) when ALL hold:
-    - same prerequisites as winner
-    - P(effect inside ROPE) >= futility_rope_threshold for ALL variants
-
-Typical usage
--------------
-    from argonx.sequential.stopping import evaluate_stopping, StoppingChecker
-
-    # Stateless: single checkpoint
-    result = evaluate_stopping(
-        samples=posterior_samples,
-        variant_names=["control", "variant_b"],
-        control="control",
-        n_users_per_variant={"control": 5000, "variant_b": 5000},
-    )
-    print(result.safe_to_stop, result.stopping_reason)
-    print(result.recommendation)
-
-    # Stateful: trajectory across checkpoints
-    checker = StoppingChecker(
-        loss_threshold=0.01,
-        min_sample_size=1000,
-        burn_in_users=500,
-        daily_traffic_per_variant={"control": 500, "variant_b": 500},
-    )
-    for day, (samples, n_users) in enumerate(daily_data, start=1):
-        result = checker.update(
-            samples, variant_names, control, n_users,
-            experiment_age_days=float(day),
-        )
-        if result.safe_to_stop:
-            break
-    fig = checker.plot_trajectory()
-"""
-
 from __future__ import annotations
 
 import warnings
@@ -103,50 +12,23 @@ from matplotlib.colors import ListedColormap
 from argonx.decision_rules.metrics import compute_expected_loss, compute_prob_best
 
 
-# ---------------------------------------------------------------------------
-# Module-level defaults — all overridable via function/class arguments.
-# Nothing is hardcoded inside logic. These are the named defaults only.
-# ---------------------------------------------------------------------------
+_DEFAULT_LOSS_THRESHOLD       = 0.01   
+_DEFAULT_PROB_BEST_MIN        = 0.80  
+_DEFAULT_MIN_SAMPLE_SIZE      = 1000 
+_DEFAULT_BURN_IN_USERS        = 500 
+_DEFAULT_MIN_CHECKPOINTS      = 3      
+_DEFAULT_FUTILITY_THRESHOLD   = 0.80   
+_DEFAULT_IMBALANCE_TOLERANCE  = 0.10   
+_DEFAULT_NOVELTY_DAYS         = 14     
+_DEFAULT_ROPE_BOUNDS          = (-0.01, 0.01)  
 
-_DEFAULT_LOSS_THRESHOLD       = 0.01   # expected loss below which stopping fires
-_DEFAULT_PROB_BEST_MIN        = 0.80   # minimum P(best) before stopping is considered
-_DEFAULT_MIN_SAMPLE_SIZE      = 1000   # hard floor per variant — statistical power gate
-_DEFAULT_BURN_IN_USERS        = 500    # data quality floor — early data rejected below this
-_DEFAULT_MIN_CHECKPOINTS      = 3      # minimum looks before stopping is allowed
-_DEFAULT_FUTILITY_THRESHOLD   = 0.80   # P(inside ROPE) for ALL variants triggers futility
-_DEFAULT_IMBALANCE_TOLERANCE  = 0.10   # max deviation from expected traffic share
-_DEFAULT_NOVELTY_DAYS         = 14     # warn if experiment is younger than this
-_DEFAULT_ROPE_BOUNDS          = (-0.01, 0.01)  # ROPE region for futility, ±1% default
-
-# Estimation internals — named so they are auditable, not buried
-_USERS_ESTIMATE_FLOOR         = 100    # never return "0 more users needed"
-_USERS_ESTIMATE_SAFETY_FACTOR = 1.25   # conservative multiplier on projection
-_MIN_DRAWS_WARNING            = 500    # warn when posterior has fewer draws than this
-
-
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
+_USERS_ESTIMATE_FLOOR         = 100  
+_USERS_ESTIMATE_SAFETY_FACTOR = 1.25 
+_MIN_DRAWS_WARNING            = 500    
 
 @dataclass
 class TrafficDiagnostics:
-    """
-    Traffic health check at a single checkpoint.
-
-    balanced : bool
-        True when all variants are within imbalance_tolerance of their
-        expected share. False means inference may be biased.
-    observed_shares : dict[str, float]
-        Fraction of total traffic each variant actually received.
-    expected_shares : dict[str, float]
-        Fraction each variant should receive. Uniform (1/n) when not provided.
-    max_deviation : float
-        Largest absolute deviation between observed and expected share.
-    imbalance_tolerance : float
-        The configured tolerance threshold.
-    flagged_variants : list[str]
-        Variants whose observed share deviates beyond tolerance.
-    """
+    """Traffic health check at a single checkpoint."""
     balanced: bool
     observed_shares: dict[str, float]
     expected_shares: dict[str, float]
@@ -157,22 +39,7 @@ class TrafficDiagnostics:
 
 @dataclass
 class UsersNeededEstimate:
-    """
-    Per-variant estimate of additional users needed at current effect size.
-
-    additional_users : dict[str, int]
-        Approximate additional users needed per non-control variant.
-    days_to_completion : dict[str, float | None]
-        Approximate days at current traffic rate per variant.
-        None when daily_traffic_per_variant was not provided.
-    basis : str
-        Which gate is the binding constraint — "loss" or "prob_best".
-    safety_factor : float
-        The multiplier applied to the raw projection. Exposed so the user
-        knows the estimate is conservative, not exact.
-    note : str
-        Plain-English caveat.
-    """
+    """Per-variant estimate of additional users needed at current effect size."""
     additional_users: dict[str, int]
     days_to_completion: dict[str, Optional[float]]
     basis: str
@@ -182,13 +49,7 @@ class UsersNeededEstimate:
 
 @dataclass
 class CheckpointSnapshot:
-    """
-    Complete evidence state at a single checkpoint.
-
-    Stored in StoppingResult.trajectory. The full list of these is what
-    plot_trajectory() renders. Each field maps directly to a named gate
-    so it is always clear exactly which gate blocked or allowed stopping.
-    """
+    """Complete evidence state at a single checkpoint."""
     checkpoint_index: int
     n_users_per_variant: dict[str, int]
     total_users: int
@@ -196,7 +57,6 @@ class CheckpointSnapshot:
     prob_best: dict[str, float]
     best_variant: str
 
-    # Gate states — one bool per gate, named to match gate_states dict
     burn_in_complete: bool
     sample_size_reached: bool
     min_checkpoints_reached: bool
@@ -204,7 +64,6 @@ class CheckpointSnapshot:
     prob_best_sufficient: bool
     traffic_balanced: bool
 
-    # Outcome
     safe_to_stop: bool
     stopping_reason: Literal["winner", "futility", "none"]
     futility_triggered: bool
@@ -212,46 +71,7 @@ class CheckpointSnapshot:
 
 @dataclass
 class StoppingResult:
-    """
-    Full output of a sequential stopping evaluation.
-
-    safe_to_stop : bool
-        True when stopping is warranted — winner found or futility declared.
-        Check stopping_reason to distinguish.
-    stopping_reason : "winner" | "futility" | "none"
-        "winner"   — loss < threshold and P(best) sufficient.
-        "futility" — effect consistently inside ROPE across all variants.
-        "none"     — continue running.
-    best_variant : str
-        Variant with highest P(best) at this checkpoint.
-    expected_loss : dict[str, float]
-        Current expected loss per variant.
-    prob_best : dict[str, float]
-        Current P(best) per variant via simultaneous argmax.
-    loss_threshold : float
-        The configured stopping threshold. Stored for downstream display.
-    gate_states : dict[str, bool]
-        Which gates passed and which blocked stopping. Useful for debugging
-        why stopping did not fire when expected.
-        Keys: burn_in, sample_size, min_checkpoints, loss, prob_best, traffic.
-    traffic : TrafficDiagnostics
-        Full traffic health check at this checkpoint.
-    users_needed : UsersNeededEstimate | None
-        Per-variant estimate when not safe to stop. None when stopping.
-    novelty_warning : bool
-        True when experiment_age_days < novelty_warning_days.
-    futility_triggered : bool
-        True when futility fired (same as stopping_reason == "futility").
-        Kept as a separate field for programmatic access without string check.
-    recommendation : str
-        Plain-English recommendation with all context included.
-    checkpoint_index : int
-        Ordinal index of this checkpoint (1-based).
-    trajectory : list[CheckpointSnapshot]
-        Full history of all evaluated checkpoints including this one.
-    warnings : list[str]
-        Non-fatal issues flagged during evaluation.
-    """
+    """Full output of a sequential stopping evaluation."""
     safe_to_stop: bool
     stopping_reason: Literal["winner", "futility", "none"]
     best_variant: str
@@ -268,24 +88,12 @@ class StoppingResult:
     trajectory: list[CheckpointSnapshot] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
-
-# ---------------------------------------------------------------------------
-# Traffic diagnostics
-# ---------------------------------------------------------------------------
-
 def _check_traffic_balance(
     n_users_per_variant: dict[str, int],
     expected_shares: Optional[dict[str, float]],
     imbalance_tolerance: float,
 ) -> TrafficDiagnostics:
-    """
-    Check whether traffic is distributed as expected across variants.
-
-    Assumes uniform split when expected_shares is None. A variant is flagged
-    when its observed share deviates from expected by more than
-    imbalance_tolerance. All inputs come from function arguments — no
-    module-level defaults are accessed here.
-    """
+    """Check whether traffic is distributed as expected across variants."""
     n_variants = len(n_users_per_variant)
     total = sum(n_users_per_variant.values())
 
@@ -319,11 +127,6 @@ def _check_traffic_balance(
         flagged_variants=flagged,
     )
 
-
-# ---------------------------------------------------------------------------
-# Futility detection
-# ---------------------------------------------------------------------------
-
 def _check_futility(
     samples: np.ndarray,
     variant_names: list[str],
@@ -332,20 +135,7 @@ def _check_futility(
     rope_high: float,
     futility_rope_threshold: float,
 ) -> bool:
-    """
-    Return True when the experiment should be stopped for futility.
-
-    Futility fires when ALL non-control variants show P(effect inside ROPE)
-    >= futility_rope_threshold. The posterior is concentrated in the region
-    of practical equivalence — no meaningful winner expected with more data.
-
-    Lift computed draw-by-draw as (variant - control) / |control|, matching
-    the definition in metrics.py. All thresholds come from arguments — no
-    module constants accessed here.
-
-    Returns False (do not stop) when control draws are all zero, since
-    relative lift is undefined in that case.
-    """
+    
     control_idx = variant_names.index(control)
     control_draws = samples[:, control_idx]
 
@@ -365,14 +155,9 @@ def _check_futility(
         prob_inside = float(np.mean((lift >= rope_low) & (lift <= rope_high)))
 
         if prob_inside < futility_rope_threshold:
-            return False  # This variant might still win
+            return False  
 
-    return True  # All variants are practically equivalent
-
-
-# ---------------------------------------------------------------------------
-# Users-needed estimate
-# ---------------------------------------------------------------------------
+    return True 
 
 def _estimate_users_needed(
     best_variant: str,
@@ -387,35 +172,18 @@ def _estimate_users_needed(
     users_floor: int,
     safety_factor: float,
 ) -> Optional[UsersNeededEstimate]:
-    """
-    Compute per-variant estimates of additional users needed.
-
-    Uses posterior contraction scaling: expected loss ~ 1/sqrt(n), which
-    means n_target = n_current * (current_loss / threshold)^2. Applies
-    safety_factor as a conservative multiplier. Converts to calendar days
-    when daily_traffic_per_variant is provided.
-
-    Binding constraint is whichever gate is furthest from passing — loss
-    threshold or P(best) minimum. The basis field records which one drove
-    the estimate.
-
-    All thresholds and floors come from arguments. users_floor and
-    safety_factor are passed in from the caller (which gets them from
-    module constants or user overrides) — not accessed directly here.
-
-    Returns None when the effect is zero across all variants.
-    """
+    """Compute per-variant estimates of additional users needed."""
     best_loss = expected_loss.get(best_variant, float("inf"))
     best_p = prob_best.get(best_variant, 0.0)
 
-    loss_gap = best_loss - loss_threshold   # positive = loss too high
-    prob_gap = prob_best_min - best_p       # positive = P(best) too low
+    loss_gap = best_loss - loss_threshold
+    prob_gap = prob_best_min - best_p       
 
     if loss_gap <= 0 and prob_gap <= 0:
-        return None  # Both gates already passing
+        return None
 
     if best_loss <= 0:
-        return None  # Zero loss — cannot project
+        return None 
 
     additional_per_variant: dict[str, int] = {}
     days_per_variant: dict[str, Optional[float]] = {}
@@ -432,7 +200,6 @@ def _estimate_users_needed(
             continue
 
         if loss_gap > 0:
-            # Loss is the binding constraint — use 1/sqrt(n) projection
             ratio = best_loss / loss_threshold
             n_target = n_current * (ratio ** 2)
             additional = max(
@@ -441,7 +208,6 @@ def _estimate_users_needed(
             )
             basis = "loss"
         else:
-            # P(best) is binding — harder to project, use fractional shortfall
             shortfall_fraction = prob_gap / max(best_p, 0.01)
             additional = max(
                 int(np.ceil(n_current * shortfall_fraction * safety_factor)),
@@ -472,11 +238,6 @@ def _estimate_users_needed(
         ),
     )
 
-
-# ---------------------------------------------------------------------------
-# Recommendation builder
-# ---------------------------------------------------------------------------
-
 def _build_recommendation(
     safe_to_stop: bool,
     stopping_reason: str,
@@ -503,7 +264,6 @@ def _build_recommendation(
     best_p = prob_best.get(best_variant, 0.0)
     parts = []
 
-    # --- Stopping outcomes ---
     if safe_to_stop and stopping_reason == "winner":
         parts.append(
             f"SAFE TO STOP — winner found. '{best_variant}' has expected loss "
@@ -527,7 +287,6 @@ def _build_recommendation(
         )
         return " ".join(parts)
 
-    # --- Not stopping — explain which gate(s) blocked ---
     parts.append(
         f"CONTINUE EXPERIMENT. '{best_variant}' leads "
         f"with P(best) = {best_p:.3f}."
@@ -584,11 +343,6 @@ def _build_recommendation(
 
     return " ".join(parts)
 
-
-# ---------------------------------------------------------------------------
-# Core stateless evaluation
-# ---------------------------------------------------------------------------
-
 def evaluate_stopping(
     samples: np.ndarray,
     variant_names: list[str],
@@ -613,84 +367,8 @@ def evaluate_stopping(
     min_draws_warning: int = _MIN_DRAWS_WARNING,
     prior_trajectory: Optional[list[CheckpointSnapshot]] = None,
 ) -> StoppingResult:
-    """
-    Evaluate whether it is safe to stop the experiment at this checkpoint.
-
-    Stateless — evaluates a single checkpoint. For stateful trajectory
-    accumulation across multiple checkpoints, use StoppingChecker.
-
-    Parameters
-    ----------
-    samples : np.ndarray
-        Posterior samples. Shape (n_draws, n_variants). Columns must align
-        with variant_names in sorted order — same contract as BaseModel.
-    variant_names : list[str]
-        Sorted variant names. Must match samples column order.
-    control : str
-        Name of the control variant.
-    n_users_per_variant : dict[str, int]
-        Current observed user counts per variant. Must include all variants.
-    loss_threshold : float
-        Stop when best variant's expected loss falls below this. Default 0.01.
-    prob_best_min : float
-        Minimum P(best) before stopping is considered. Default 0.80.
-    min_sample_size : int
-        Hard minimum observations per variant before stopping is evaluated.
-        Statistical power gate. Default 1000.
-    burn_in_users : int
-        Data quality floor. Stopping refused until this many users per variant.
-        Must be <= min_sample_size. Default 500.
-    min_checkpoints : int
-        Minimum evaluations before stopping is allowed regardless of evidence.
-        Guards against stopping on a lucky first look. Default 3.
-    checkpoint_index : int
-        1-based ordinal index of this checkpoint. Managed by StoppingChecker
-        when using the stateful API. Pass explicitly when calling directly.
-    rope_bounds : tuple[float, float]
-        ROPE region in relative lift units for futility detection.
-        Default (-0.01, 0.01) = ±1%.
-    futility_rope_threshold : float
-        P(inside ROPE) >= this for ALL variants triggers futility stop.
-        Default 0.80.
-    expected_traffic_shares : dict[str, float] | None
-        Expected fraction of total traffic per variant. Must sum to 1.0.
-        Uniform split assumed when None.
-    imbalance_tolerance : float
-        Maximum acceptable deviation from expected traffic share. Default 0.10.
-    imbalance_blocks_stopping : bool
-        If True, traffic imbalance blocks safe_to_stop even when evidence
-        thresholds are met. Default True.
-    daily_traffic_per_variant : dict[str, float] | None
-        Average daily users per variant. Converts user estimates to days.
-    experiment_age_days : float | None
-        Days since experiment launched. Drives novelty warning.
-    novelty_warning_days : int
-        Experiments younger than this trigger novelty warning. Default 14.
-    users_estimate_floor : int
-        Minimum value returned for any per-variant user estimate. Default 100.
-    users_estimate_safety_factor : float
-        Multiplier applied to raw projection. Default 1.25. Exposed so users
-        can inspect or override the conservatism of the estimate.
-    min_draws_warning : int
-        Warn when posterior has fewer draws than this. Default 500.
-    prior_trajectory : list[CheckpointSnapshot] | None
-        Snapshots from previous checkpoints. Appended to in the returned result.
-
-    Returns
-    -------
-    StoppingResult
-
-    Raises
-    ------
-    ValueError
-        Invalid samples shape, missing control, mismatched n_users keys,
-        invalid threshold values, or burn_in_users > min_sample_size.
-    """
+    """Evaluate whether it is safe to stop the experiment at this checkpoint."""
     collected_warnings: list[str] = []
-
-    # -----------------------------------------------------------------------
-    # Input validation
-    # -----------------------------------------------------------------------
 
     if samples.ndim != 2:
         raise ValueError(
@@ -775,10 +453,6 @@ def evaluate_stopping(
                 v: s / share_sum for v, s in expected_traffic_shares.items()
             }
 
-    # -----------------------------------------------------------------------
-    # Gate 1 — Burn-in (data quality)
-    # -----------------------------------------------------------------------
-
     min_users_seen = min(n_users_per_variant.get(v, 0) for v in variant_names)
     burn_in_complete = min_users_seen >= burn_in_users
 
@@ -789,21 +463,8 @@ def evaluate_stopping(
         )
         collected_warnings.append(msg)
 
-    # -----------------------------------------------------------------------
-    # Gate 2 — Minimum sample size (statistical power)
-    # -----------------------------------------------------------------------
-
     sample_size_reached = min_users_seen >= min_sample_size
-
-    # -----------------------------------------------------------------------
-    # Gate 3 — Minimum checkpoints
-    # -----------------------------------------------------------------------
-
     min_checkpoints_reached = checkpoint_index >= min_checkpoints
-
-    # -----------------------------------------------------------------------
-    # Traffic diagnostics — always run, used for warnings even when not blocking
-    # -----------------------------------------------------------------------
 
     traffic = _check_traffic_balance(
         n_users_per_variant=n_users_per_variant,
@@ -821,10 +482,6 @@ def evaluate_stopping(
         warnings.warn(msg, UserWarning, stacklevel=2)
         collected_warnings.append(msg)
 
-    # -----------------------------------------------------------------------
-    # Novelty warning
-    # -----------------------------------------------------------------------
-
     novelty_warning = (
         experiment_age_days is not None
         and experiment_age_days < novelty_warning_days
@@ -839,10 +496,6 @@ def evaluate_stopping(
         warnings.warn(msg, UserWarning, stacklevel=2)
         collected_warnings.append(msg)
 
-    # -----------------------------------------------------------------------
-    # Core metric computation — reuses metrics layer directly, no reimplementation
-    # -----------------------------------------------------------------------
-
     loss_result = compute_expected_loss(samples, variant_names, control)
     prob_best_result = compute_prob_best(samples, variant_names)
 
@@ -850,27 +503,9 @@ def evaluate_stopping(
     best_loss = loss_result.expected_loss[best_variant]
     best_p = prob_best_result.probabilities[best_variant]
 
-    # -----------------------------------------------------------------------
-    # Gate 4 — Loss threshold
-    # -----------------------------------------------------------------------
-
     loss_below_threshold = best_loss < loss_threshold
-
-    # -----------------------------------------------------------------------
-    # Gate 5 — P(best) minimum
-    # -----------------------------------------------------------------------
-
     prob_best_sufficient = best_p >= prob_best_min
-
-    # -----------------------------------------------------------------------
-    # Gate 6 — Traffic balance (can be configured to warn-only)
-    # -----------------------------------------------------------------------
-
     traffic_gate_passed = traffic.balanced or not imbalance_blocks_stopping
-
-    # -----------------------------------------------------------------------
-    # Prerequisites — gates 1-3 and 6 must all pass before evidence is checked
-    # -----------------------------------------------------------------------
 
     prerequisites_met = (
         burn_in_complete
@@ -879,19 +514,11 @@ def evaluate_stopping(
         and traffic_gate_passed
     )
 
-    # -----------------------------------------------------------------------
-    # Winner stopping
-    # -----------------------------------------------------------------------
-
     winner_stopping = (
         prerequisites_met
         and loss_below_threshold
         and prob_best_sufficient
     )
-
-    # -----------------------------------------------------------------------
-    # Futility stopping — separate signal, same prerequisites
-    # -----------------------------------------------------------------------
 
     futility_triggered = prerequisites_met and _check_futility(
         samples=samples,
@@ -911,10 +538,6 @@ def evaluate_stopping(
     else:
         stopping_reason = "none"
 
-    # -----------------------------------------------------------------------
-    # Gate states — one dict for programmatic access and display
-    # -----------------------------------------------------------------------
-
     gate_states = {
         "burn_in":          burn_in_complete,
         "sample_size":      sample_size_reached,
@@ -923,10 +546,6 @@ def evaluate_stopping(
         "prob_best":        prob_best_sufficient,
         "traffic":          traffic.balanced,
     }
-
-    # -----------------------------------------------------------------------
-    # Users-needed estimate — only when prerequisites met and not stopping
-    # -----------------------------------------------------------------------
 
     users_needed: Optional[UsersNeededEstimate] = None
 
@@ -944,10 +563,6 @@ def evaluate_stopping(
             users_floor=users_estimate_floor,
             safety_factor=users_estimate_safety_factor,
         )
-
-    # -----------------------------------------------------------------------
-    # Snapshot
-    # -----------------------------------------------------------------------
 
     total_users = sum(n_users_per_variant.values())
 
@@ -971,10 +586,6 @@ def evaluate_stopping(
 
     trajectory = list(prior_trajectory or [])
     trajectory.append(snapshot)
-
-    # -----------------------------------------------------------------------
-    # Recommendation
-    # -----------------------------------------------------------------------
 
     recommendation = _build_recommendation(
         safe_to_stop=safe_to_stop,
@@ -1010,77 +621,7 @@ def evaluate_stopping(
         warnings=collected_warnings,
     )
 
-
-# ---------------------------------------------------------------------------
-# Stateful checker
-# ---------------------------------------------------------------------------
-
 class StoppingChecker:
-    """
-    Stateful wrapper around evaluate_stopping() for multi-checkpoint workflows.
-
-    All configuration is set once at construction and applied consistently
-    across every call to update(). Call plot_trajectory() at any point to
-    visualise evidence accumulation across all checkpoints so far.
-
-    Parameters
-    ----------
-    loss_threshold : float
-        Stop when best variant's expected loss falls below this. Default 0.01.
-    prob_best_min : float
-        Minimum P(best) before stopping is considered. Default 0.80.
-    min_sample_size : int
-        Hard minimum users per variant before stopping fires. Default 1000.
-    burn_in_users : int
-        Data quality floor per variant. Must be <= min_sample_size. Default 500.
-    min_checkpoints : int
-        Minimum looks before stopping is allowed. Default 3.
-    rope_bounds : tuple[float, float]
-        ROPE region for futility detection. Default (-0.01, 0.01).
-    futility_rope_threshold : float
-        P(inside ROPE) threshold for futility. Default 0.80.
-    expected_traffic_shares : dict[str, float] | None
-        Expected traffic split. Uniform if None.
-    imbalance_tolerance : float
-        Max acceptable deviation from expected share. Default 0.10.
-    imbalance_blocks_stopping : bool
-        Imbalance blocks stopping when True. Default True.
-    daily_traffic_per_variant : dict[str, float] | None
-        Daily traffic per variant for calendar estimates.
-    novelty_warning_days : int
-        Warn when experiment is younger than this. Default 14.
-    users_estimate_floor : int
-        Minimum per-variant user estimate. Default 100.
-    users_estimate_safety_factor : float
-        Conservatism multiplier on user projections. Default 1.25.
-    min_draws_warning : int
-        Warn when posterior draws fall below this. Default 500.
-
-    Example
-    -------
-        checker = StoppingChecker(
-            loss_threshold=0.01,
-            min_sample_size=1000,
-            burn_in_users=500,
-            daily_traffic_per_variant={"control": 500, "variant_b": 500},
-        )
-
-        for day, (samples, n_users) in enumerate(daily_data, start=1):
-            result = checker.update(
-                samples=samples,
-                variant_names=["control", "variant_b"],
-                control="control",
-                n_users_per_variant=n_users,
-                experiment_age_days=float(day),
-            )
-            print(result.recommendation)
-            if result.safe_to_stop:
-                print(f"Stopping: {result.stopping_reason}")
-                break
-
-        fig = checker.plot_trajectory()
-        fig.savefig("trajectory.png", dpi=150, bbox_inches="tight")
-    """
 
     def __init__(
         self,
@@ -1137,26 +678,7 @@ class StoppingChecker:
         n_users_per_variant: dict[str, int],
         experiment_age_days: Optional[float] = None,
     ) -> StoppingResult:
-        """
-        Evaluate the current checkpoint and update the internal trajectory.
-
-        Parameters
-        ----------
-        samples : np.ndarray
-            Current posterior samples. Shape (n_draws, n_variants).
-        variant_names : list[str]
-            Sorted variant names matching samples column order.
-        control : str
-            Name of the control variant.
-        n_users_per_variant : dict[str, int]
-            Current observed user counts per variant.
-        experiment_age_days : float | None
-            Days since experiment launched. Used for novelty warning.
-
-        Returns
-        -------
-        StoppingResult
-        """
+        """Evaluate the current checkpoint and update the internal trajectory."""
         self._checkpoint_index += 1
 
         result = evaluate_stopping(
@@ -1197,24 +719,7 @@ class StoppingChecker:
         figsize: tuple[int, int] = (13, 10),
         suptitle: Optional[str] = None,
     ) -> plt.Figure:
-        """
-        Plot evidence accumulation across all evaluated checkpoints.
-
-        Three panels:
-            Top    — P(best) per variant. Dashed line at prob_best_min.
-            Middle — Expected loss per variant. Red dashed line at
-                     loss_threshold. Green band = safe-to-stop zone.
-            Bottom — Gate status heatmap. Each gate shown as green (passed)
-                     or red (blocked) at each checkpoint. Lets you see exactly
-                     which gate blocked stopping and when each gate cleared.
-
-        A vertical green dotted line marks the first checkpoint where
-        safe_to_stop was True, labelled with the stopping_reason.
-
-        Returns
-        -------
-        plt.Figure
-        """
+        """Plot evidence accumulation across all evaluated checkpoints."""
         if not self._trajectory:
             raise RuntimeError(
                 "No checkpoints recorded. Call update() at least once before plotting."
@@ -1243,7 +748,6 @@ class StoppingChecker:
             fontsize=14, fontweight="bold",
         )
 
-        # --- Panel 1: P(best) ---
         for i, v in enumerate(all_variants):
             colour = _PALETTE[i % len(_PALETTE)]
             y = [s.prob_best.get(v, 0.0) for s in snapshots]
@@ -1262,7 +766,6 @@ class StoppingChecker:
         ax_prob.spines["top"].set_visible(False)
         ax_prob.spines["right"].set_visible(False)
 
-        # --- Panel 2: Expected loss ---
         for i, v in enumerate(all_variants):
             colour = _PALETTE[i % len(_PALETTE)]
             y = [s.expected_loss.get(v, 0.0) for s in snapshots]
@@ -1286,7 +789,6 @@ class StoppingChecker:
         ax_loss.spines["top"].set_visible(False)
         ax_loss.spines["right"].set_visible(False)
 
-        # --- Panel 3: Gate heatmap ---
         gate_keys = [
             "burn_in", "sample_size", "min_checkpoints",
             "loss", "prob_best", "traffic",
@@ -1331,7 +833,6 @@ class StoppingChecker:
         ax_gates.legend(handles=[pass_patch, fail_patch], fontsize=8,
                         loc="upper left", framealpha=0.9)
 
-        # --- Vertical stop marker ---
         stop_snaps = [s for s in snapshots if s.safe_to_stop]
         if stop_snaps:
             first_stop = stop_snaps[0]
