@@ -717,3 +717,65 @@ def plot_all(
 
     fig.tight_layout()
     return fig
+
+
+def plot_segments_grid(
+    segment_samples: np.ndarray,
+    segment_names: list[str],
+    variant_names: list[str],
+    hdi_prob: float = 0.95,
+    figsize: tuple[int, int] | None = None,
+) -> plt.Figure:
+    """
+    Render a grid of posterior density plots, one per segment.
+
+    Parameters
+    ----------
+    segment_samples : np.ndarray
+        Posterior samples per segment (n_draws, n_segments, n_variants).
+    segment_names : list[str]
+        Names of the population segments.
+    variant_names : list[str]
+        Names of the variants.
+    hdi_prob : float, optional
+        Highest Density Interval probability, by default 0.95.
+    figsize : tuple[int, int] | None, optional
+        Figure size, auto-calculated if None.
+
+    Returns
+    -------
+    plt.Figure
+        The multi-segment dashboard.
+    """
+    n_segs = len(segment_names)
+    n_cols = 3
+    n_rows = int(np.ceil(n_segs / n_cols))
+
+    if figsize is None:
+        figsize = (n_cols * 5, n_rows * 4)
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
+    fig.suptitle(
+        "Posterior Distributions by Segment", fontsize=16, fontweight="bold", y=1.02
+    )
+
+    for i, name in enumerate(segment_names):
+        ax = axes[i // n_cols, i % n_cols]
+        # slice samples: (n_draws, variant_idx) for this segment
+        seg_samples = segment_samples[:, i, :]
+
+        plot_posteriors(
+            seg_samples,
+            variant_names,
+            metric_name="metric",
+            hdi_prob=hdi_prob,
+            ax=ax,
+        )
+        ax.set_title(f"Segment: {name}", fontsize=12, fontweight="bold")
+
+    # Hide unused axes
+    for j in range(i + 1, n_rows * n_cols):
+        axes[j // n_cols, j % n_cols].axis("off")
+
+    fig.tight_layout()
+    return fig

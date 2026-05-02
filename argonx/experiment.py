@@ -98,6 +98,7 @@ def _validate_inputs(
     lower_is_better: dict[str, bool] | None,
     segment_col: str | None,
     control: str | None,
+    guardrail_models: dict[str, str] | None = None,
 ) -> None:
     """
     Validate experiment inputs.
@@ -120,6 +121,8 @@ def _validate_inputs(
         Column name for segmenting data.
     control : str | None
         Name of the control variant.
+    guardrail_models : dict[str, str] | None, optional
+        Model override per guardrail, by default None.
 
     Raises
     ------
@@ -148,6 +151,12 @@ def _validate_inputs(
     for g in lower_is_better:
         if g not in guardrails:
             raise ValueError(f"{g} not in guardrails")
+
+    for g, m in (guardrail_models or {}).items():
+        if g not in (guardrails or []):
+            raise ValueError(f"guardrail_models key '{g}' not in guardrails")
+        if m not in _MODEL_REGISTRY:
+            raise ValueError(f"Unknown model '{m}' for guardrail '{g}'")
 
     if segment_col and segment_col not in data.columns:
         raise ValueError("segment_col missing")
@@ -509,6 +518,11 @@ class Experiment:
         Name of the control variant, by default None.
     priors : dict | None, optional
         Override for model priors, by default None.
+    guardrail_models : dict[str, str] | None, optional
+        Model override per guardrail. Keys are guardrail column names, values
+        are model strings from the registry (e.g., 'lognormal', 'gaussian').
+        If a guardrail is not listed here, the primary model is used as fallback.
+        Example: {'page_load_ms': 'lognormal', 'error_rate': 'binary'}
     """
 
     def __init__(
@@ -522,6 +536,7 @@ class Experiment:
         segment_col: str | None = None,
         control: str | None = None,
         priors: dict | None = None,
+        guardrail_models: dict[str, str] | None = None,
     ):
         self.data = data
         self.variant_col = variant_col
@@ -532,6 +547,7 @@ class Experiment:
         self.segment_col = segment_col
         self.control = control
         self.priors = priors
+        self.guardrail_models = guardrail_models or {}
 
         _validate_inputs(
             data,
@@ -542,6 +558,7 @@ class Experiment:
             self.lower_is_better,
             segment_col,
             control,
+            self.guardrail_models,
         )
 
         self._variant_names = sorted(data[variant_col].unique().tolist())
@@ -648,7 +665,11 @@ class Experiment:
         for g in self.guardrails:
             s = _resolve_metric(self.data, g)
             d = _split_by_variant(self.data, self.variant_col, s, self._variant_names)
-            guardrail_samples[g] = _fit_and_sample(model_class, d, n_draws, random_seed)
+            g_model_str = self.guardrail_models.get(g, self.model)
+            g_model_class = _select_model(g_model_str, hierarchical=False)
+            guardrail_samples[g] = _fit_and_sample(
+                g_model_class, d, n_draws, random_seed
+            )
 
         decision = run_engine(
             samples=primary_samples,
@@ -658,7 +679,7 @@ class Experiment:
             config=full_config,
         )
 
-        return Results(decision, config=full_config)
+        return Results(decision, config=full_config, primary_samples=primary_samples)
 
     def _run_hierarchical(
         self,
@@ -696,8 +717,10 @@ class Experiment:
                 self._segment_names,
                 self._variant_names,
             )
+            g_model_str = self.guardrail_models.get(g, self.model)
+            g_model_class = _select_model(g_model_str, hierarchical=True)
             g_pop, g_seg, g_warn = _fit_and_sample_hierarchical(
-                model_class, g_seg_data, n_draws, self.priors
+                g_model_class, g_seg_data, n_draws, self.priors
             )
             guardrail_pop_samples[g] = g_pop
             guardrail_seg_samples[g] = g_seg
@@ -752,6 +775,8 @@ class Experiment:
             segment_guardrail_violations=seg_guardrail_violations
             if seg_guardrail_violations
             else None,
+            primary_samples=primary_pop_samples,
+            segment_samples=primary_seg_samples,
         )
 
     def __repr__(self):

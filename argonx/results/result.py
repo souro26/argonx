@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+import matplotlib.pyplot as plt
 from argonx.decision_rules.engine import DecisionResult
 from argonx.results.plots import plot_all
 
@@ -24,6 +25,10 @@ class Results:
         Results split by segment for hierarchical models, by default None.
     segment_guardrail_violations : dict[str, list[str]] | None, optional
         Guardrail violations per segment, by default None.
+    primary_samples : np.ndarray | None, optional
+        Posterior samples for the primary metric, by default None.
+    segment_samples : np.ndarray | None, optional
+        Posterior samples for the primary metric per segment, by default None.
     """
 
     def __init__(
@@ -32,11 +37,15 @@ class Results:
         config: dict = None,
         segment_results: dict[str, DecisionResult] | None = None,
         segment_guardrail_violations: dict[str, list[str]] | None = None,
+        primary_samples: np.ndarray | None = None,
+        segment_samples: np.ndarray | None = None,
     ) -> None:
         self._d = decision
         self._config = config or {}
         self.segment_results = segment_results
         self.segment_guardrail_violations = segment_guardrail_violations
+        self.samples = primary_samples
+        self.segment_samples = segment_samples
 
     def __getattr__(self, name: str):
         try:
@@ -372,7 +381,7 @@ class Results:
 
     def plot(
         self,
-        samples: np.ndarray,
+        samples: np.ndarray | None = None,
         metric_name: str = "metric",
         rope_bounds: tuple[float, float] | None = None,
         figsize: tuple[int, int] = (18, 11),
@@ -383,8 +392,9 @@ class Results:
 
         Parameters
         ----------
-        samples : np.ndarray
-            Posterior samples to plot.
+        samples : np.ndarray | None, optional
+            Posterior samples to plot. If None, uses the samples stored in the Results
+            object (if available), by default None.
         metric_name : str, optional
             Name of the primary metric, by default "metric".
         rope_bounds : tuple[float, float] | None, optional
@@ -399,6 +409,14 @@ class Results:
         plt.Figure
             The complete dashboard figure.
         """
+        if samples is None:
+            if self.samples is None:
+                raise ValueError(
+                    "No samples available in Results. "
+                    "Pass samples=... or ensure experiment was run with samples stored."
+                )
+            samples = self.samples
+
         if rope_bounds is None:
             rope_bounds = self._config.get("rope_bounds", (-0.01, 0.01))
 
@@ -410,15 +428,41 @@ class Results:
             control=d.metrics.loss.control,
             prob_best=d.metrics.prob_best.probabilities,
             expected_loss=d.metrics.loss.expected_loss,
-            guardrail_results=d.guardrails.guardrails,
+            guardrail_results=d.guardrails.results,
             cvar_loss=d.metrics.cvar.cvar,
             rope_bounds=rope_bounds,
             metric_name=metric_name,
-            hdi_prob=d.metrics.lift.hdi_prob,
-            prob_best_threshold=self._config.get("prob_best_strong", 0.95),
-            loss_threshold=self._config.get("expected_loss_max", 0.01),
+            hdi_prob=self._config.get("hdi_prob", 0.95),
+            prob_best_threshold=self._config.get("prob_best_threshold", 0.95),
+            loss_threshold=self._config.get("loss_threshold", 0.01),
             figsize=figsize,
             suptitle=suptitle,
+        )
+
+    def plot_segments(
+        self,
+        segment_names: list[str] | None = None,
+        figsize: tuple[int, int] | None = None,
+    ) -> plt.Figure:
+        """
+        Generate a grid of posterior plots, one per segment.
+
+        Enables visual comparison of variant performance across different
+        population slices (e.g., Mobile vs. Desktop).
+        """
+        if self.segment_samples is None:
+            raise ValueError(
+                "No segment-level samples available (not a hierarchical experiment)."
+            )
+
+        from argonx.results.plots import plot_segments_grid
+
+        # segment_samples is (n_draws, n_segments, n_variants)
+        return plot_segments_grid(
+            segment_samples=self.segment_samples,
+            segment_names=list(self.segment_results.keys()),
+            variant_names=sorted(self._d.metrics.prob_best.probabilities.keys()),
+            figsize=figsize,
         )
 
     def to_dict(self) -> dict:
