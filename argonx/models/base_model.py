@@ -7,8 +7,8 @@ class BaseModel:
 
     Models inheriting from this class are expected to consume dictionaries mapping
     variant identifiers to raw observed metric arrays, and subsequently generate rigorous
-    posterior distributions using Monte Carlo methods (typically via PyMC). The output 
-    samples must conform uniformly to an `(n_draws, n_variants)` geometric shape so that 
+    posterior distributions using Monte Carlo methods (typically via PyMC). The output
+    samples must conform uniformly to an `(n_draws, n_variants)` geometric shape so that
     the decision engine can transparently operate over different generative models.
 
     Attributes
@@ -31,7 +31,7 @@ class BaseModel:
         Parameters
         ----------
         data : dict[str, np.ndarray]
-            A payload mapping qualitative variant designators to arrays of discrete 
+            A payload mapping qualitative variant designators to arrays of discrete
             or continuous numerical observations.
 
         Returns
@@ -54,7 +54,7 @@ class BaseModel:
         Returns
         -------
         np.ndarray
-            A strictly formatted 2D array of localized posterior draws (`n_draws` rows 
+            A strictly formatted 2D array of localized posterior draws (`n_draws` rows
             by `len(variant_names)` columns).
 
         Raises
@@ -84,7 +84,7 @@ class BaseModel:
 
             if np.isnan(v).any():
                 raise ValueError(f"{k} contains NaNs")
-            
+
 
 # TODO: expose n_draws and tune as user-configurable parameters
 # TODO: add fast_sample() method with reduced draws for development use

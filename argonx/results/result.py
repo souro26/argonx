@@ -157,7 +157,9 @@ class Results:
             lines.append("-" * 40)
             for c in guardrails.conflicts:
                 lines.append(f"{c.message}")
-            lines.append("Framework cannot resolve this tradeoff. Human review required.")
+            lines.append(
+                "Framework cannot resolve this tradeoff. Human review required."
+            )
 
         if self.segment_guardrail_violations:
             lines.append("")
@@ -271,22 +273,11 @@ class Results:
             lines.append("")
             lines.append(f"Segment: {seg}")
             lines.append("-" * 40)
-            lines.append(
-                f"  Best variant:   {best}  "
-                f"(P(best)={p_best:.3f})"
-            )
-            lines.append(
-                f"  State:          {d.state}"
-            )
-            lines.append(
-                f"  Recommendation: {d.recommendation.upper()}"
-            )
-            lines.append(
-                f"  Expected lift:  {lift_mean:+.3%}"
-            )
-            lines.append(
-                f"  Guardrails:     {guardrail_status}"
-            )
+            lines.append(f"  Best variant:   {best}  " f"(P(best)={p_best:.3f})")
+            lines.append(f"  State:          {d.state}")
+            lines.append(f"  Recommendation: {d.recommendation.upper()}")
+            lines.append(f"  Expected lift:  {lift_mean:+.3%}")
+            lines.append(f"  Guardrails:     {guardrail_status}")
 
             if not d.guardrails.all_passed:
                 for gr in d.guardrails.guardrails:
@@ -327,27 +318,20 @@ class Results:
         unique_best = set(seg_best.values())
         if len(unique_best) == 1:
             winner = next(iter(unique_best))
-            lines.append(
-                f"Consistent winner across all segments: '{winner}'."
-            )
+            lines.append(f"Consistent winner across all segments: '{winner}'.")
         else:
-            lines.append(
-                "INCONSISTENT WINNER ACROSS SEGMENTS:"
-            )
+            lines.append("INCONSISTENT WINNER ACROSS SEGMENTS:")
             for seg, best in sorted(seg_best.items()):
                 lines.append(f"  {seg:<20} best={best}")
 
         ship_recs = {"ship variant", "consider shipping"}
         no_ship_recs = {"do not ship", "review required", "continue experiment"}
 
-        ship_segs = [
-            seg for seg, rec in seg_rec.items() if rec in ship_recs
-        ]
-        no_ship_segs = [
-            seg for seg, rec in seg_rec.items() if rec in no_ship_recs
-        ]
+        ship_segs = [seg for seg, rec in seg_rec.items() if rec in ship_recs]
+        no_ship_segs = [seg for seg, rec in seg_rec.items() if rec in no_ship_recs]
         inconclusive_segs = [
-            seg for seg, rec in seg_rec.items()
+            seg
+            for seg, rec in seg_rec.items()
             if rec not in ship_recs and rec not in no_ship_recs
         ]
 
@@ -356,16 +340,10 @@ class Results:
             lines.append(
                 "SHIPPING CONFLICT DETECTED — segments disagree on the decision:"
             )
-            lines.append(
-                f"  Ship:       {', '.join(sorted(ship_segs))}"
-            )
-            lines.append(
-                f"  Do not ship: {', '.join(sorted(no_ship_segs))}"
-            )
+            lines.append(f"  Ship:       {', '.join(sorted(ship_segs))}")
+            lines.append(f"  Do not ship: {', '.join(sorted(no_ship_segs))}")
             if inconclusive_segs:
-                lines.append(
-                    f"  Inconclusive: {', '.join(sorted(inconclusive_segs))}"
-                )
+                lines.append(f"  Inconclusive: {', '.join(sorted(inconclusive_segs))}")
             lines.append(
                 "Shipping universally is not recommended. "
                 "Consider segment-targeted rollout or investigate the discrepancy."
@@ -382,10 +360,7 @@ class Results:
                     f"Consider holding these until more data is collected."
                 )
         elif no_ship_segs and not ship_segs:
-            lines.append(
-                f"No segments support shipping. "
-                f"Do not ship."
-            )
+            lines.append("No segments support shipping. " "Do not ship.")
         else:
             lines.append("All segments inconclusive. Continue experiment.")
 
@@ -524,9 +499,7 @@ class Results:
             out["composite"] = {
                 "score": d.composite.score,
                 "prob_exceeds_threshold": d.composite.prob_exceeds_threshold,
-                "gap_hdi": {
-                    v: list(hdi) for v, hdi in d.composite.gap_hdi.items()
-                },
+                "gap_hdi": {v: list(hdi) for v, hdi in d.composite.gap_hdi.items()},
                 "metric_contributions": d.composite.metric_contributions,
                 "best_variant": d.composite.best_variant,
                 "threshold": d.composite.threshold,
@@ -566,8 +539,7 @@ class Results:
         metrics = d.metrics
 
         variants = [
-            v for v in metrics.prob_best.probabilities
-            if v != metrics.loss.control
+            v for v in metrics.prob_best.probabilities if v != metrics.loss.control
         ]
 
         rows = []
@@ -584,9 +556,17 @@ class Results:
                 "inside_rope": metrics.rope.inside_rope.get(v, np.nan),
                 "guardrail_passed": d.guardrails.variant_passed.get(v, np.nan),
                 "joint_prob": d.joint.joint_prob.get(v, np.nan) if d.joint else np.nan,
-                "correlation_gap": d.joint.correlation_gap.get(v, np.nan) if d.joint else np.nan,
-                "composite_score": d.composite.score.get(v, np.nan) if d.composite else np.nan,
-                "prob_exceeds_threshold": d.composite.prob_exceeds_threshold.get(v, np.nan) if d.composite else np.nan,
+                "correlation_gap": d.joint.correlation_gap.get(v, np.nan)
+                if d.joint
+                else np.nan,
+                "composite_score": d.composite.score.get(v, np.nan)
+                if d.composite
+                else np.nan,
+                "prob_exceeds_threshold": d.composite.prob_exceeds_threshold.get(
+                    v, np.nan
+                )
+                if d.composite
+                else np.nan,
             }
             rows.append(row)
 
@@ -598,8 +578,7 @@ class Results:
         def _extract_rows(d: DecisionResult, segment_label: str) -> list[dict]:
             metrics = d.metrics
             variants = [
-                v for v in metrics.prob_best.probabilities
-                if v != metrics.loss.control
+                v for v in metrics.prob_best.probabilities if v != metrics.loss.control
             ]
             result_rows = []
             for v in variants:
@@ -615,10 +594,20 @@ class Results:
                     "prob_practical": metrics.rope.prob_practical.get(v, np.nan),
                     "inside_rope": metrics.rope.inside_rope.get(v, np.nan),
                     "guardrail_passed": d.guardrails.variant_passed.get(v, np.nan),
-                    "joint_prob": d.joint.joint_prob.get(v, np.nan) if d.joint else np.nan,
-                    "correlation_gap": d.joint.correlation_gap.get(v, np.nan) if d.joint else np.nan,
-                    "composite_score": d.composite.score.get(v, np.nan) if d.composite else np.nan,
-                    "prob_exceeds_threshold": d.composite.prob_exceeds_threshold.get(v, np.nan) if d.composite else np.nan,
+                    "joint_prob": d.joint.joint_prob.get(v, np.nan)
+                    if d.joint
+                    else np.nan,
+                    "correlation_gap": d.joint.correlation_gap.get(v, np.nan)
+                    if d.joint
+                    else np.nan,
+                    "composite_score": d.composite.score.get(v, np.nan)
+                    if d.composite
+                    else np.nan,
+                    "prob_exceeds_threshold": d.composite.prob_exceeds_threshold.get(
+                        v, np.nan
+                    )
+                    if d.composite
+                    else np.nan,
                     "state": d.state,
                     "recommendation": d.recommendation,
                 }
@@ -627,8 +616,8 @@ class Results:
 
         rows.extend(_extract_rows(self._d, "aggregate"))
 
-        for seg in sorted(self.segment_results.keys()): 
-            rows.extend(_extract_rows(self.segment_results[seg], seg)) 
+        for seg in sorted(self.segment_results.keys()):
+            rows.extend(_extract_rows(self.segment_results[seg], seg))
 
         df = pd.DataFrame(rows)
         df = df.set_index(["segment", "variant"])

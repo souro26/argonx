@@ -24,8 +24,8 @@ class BinaryModel(BaseModel):
         """
         Return posterior samples using a fully conjugated Beta-Bernoulli update.
 
-        For each variant, assumes a uniform Beta(1, 1) prior and updates it via the exact 
-        analytical conjugate posterior Beta(1 + successes, 1 + failures). This allows for 
+        For each variant, assumes a uniform Beta(1, 1) prior and updates it via the exact
+        analytical conjugate posterior Beta(1 + successes, 1 + failures). This allows for
         extremely rapid sampling without Hamiltonial Monte Carlo.
 
         Parameters
@@ -49,11 +49,7 @@ class BinaryModel(BaseModel):
             successes = np.sum(data)
             failures = data.shape[0] - successes
 
-            draws = np.random.beta(
-                1 + successes,
-                1 + failures,
-                size=n_draws
-            )
+            draws = np.random.beta(1 + successes, 1 + failures, size=n_draws)
 
             samples.append(draws)
 
@@ -89,21 +85,22 @@ class HierarchicalBinaryModel(BaseModel):
         kappa_prior_beta: float = 5.0,
         priors: dict | None = None,
     ):
-        
         super().__init__()
         self.prior_alpha = prior_alpha
         self.prior_beta = prior_beta
         self.kappa_prior_beta = kappa_prior_beta
 
         if priors:
-            _allowed = {'prior_alpha', 'prior_beta', 'kappa_prior_beta'}
+            _allowed = {"prior_alpha", "prior_beta", "kappa_prior_beta"}
             unknown = set(priors) - _allowed
             if unknown:
                 raise ValueError(f"Unknown prior keys: {unknown}. Allowed: {_allowed}")
-            self.prior_alpha = priors.get('prior_alpha', self.prior_alpha)
-            self.prior_beta = priors.get('prior_beta', self.prior_beta)
-            self.kappa_prior_beta = priors.get('kappa_prior_beta', self.kappa_prior_beta)
-            
+            self.prior_alpha = priors.get("prior_alpha", self.prior_alpha)
+            self.prior_beta = priors.get("prior_beta", self.prior_beta)
+            self.kappa_prior_beta = priors.get(
+                "kappa_prior_beta", self.kappa_prior_beta
+            )
+
         self._segment_names: list[str] = []
         self._variant_names_hier: list[str] = []
         self._segment_data: dict[str, dict[str, np.ndarray]] = {}
@@ -160,9 +157,7 @@ class HierarchicalBinaryModel(BaseModel):
                     f"Got {type(variants).__name__}."
                 )
             if len(variants) < 2:
-                raise ValueError(
-                    f"Segment '{seg}' must have at least two variants."
-                )
+                raise ValueError(f"Segment '{seg}' must have at least two variants.")
             variant_sets.append(frozenset(variants.keys()))
 
             for var, arr in variants.items():
@@ -189,19 +184,17 @@ class HierarchicalBinaryModel(BaseModel):
         if len(set(variant_sets)) > 1:
             raise ValueError(
                 "All segments must have identical variant sets. "
-                f"Found inconsistent variants across segments."
+                "Found inconsistent variants across segments."
             )
 
     def _preflight_checks(self) -> None:
         """Warn on thin segments before sampling begins."""
         for seg in self._segment_names:
             total_obs = sum(
-                len(self._segment_data[seg][var])
-                for var in self._variant_names_hier
+                len(self._segment_data[seg][var]) for var in self._variant_names_hier
             )
             min_obs = min(
-                len(self._segment_data[seg][var])
-                for var in self._variant_names_hier
+                len(self._segment_data[seg][var]) for var in self._variant_names_hier
             )
             if min_obs < self.MIN_SEGMENT_SIZE:
                 self._segment_warnings[seg].append(
@@ -242,26 +235,32 @@ class HierarchicalBinaryModel(BaseModel):
         self._run_health_checks(self._trace)
         by_seg = self._extract_by_segment(self._trace, n_draws)
 
-        segment_sizes = np.array([
-            sum(len(self._segment_data[seg][var]) for var in self._variant_names_hier)
-            for seg in self._segment_names
-        ], dtype=float)
+        segment_sizes = np.array(
+            [
+                sum(
+                    len(self._segment_data[seg][var])
+                    for var in self._variant_names_hier
+                )
+                for seg in self._segment_names
+            ],
+            dtype=float,
+        )
         weights = segment_sizes / segment_sizes.sum()
 
-        population = np.einsum('dsv,s->dv', by_seg, weights)
+        population = np.einsum("dsv,s->dv", by_seg, weights)
         return population
 
     def sample_posterior_by_segment(self, n_draws: int = 1000) -> np.ndarray:
         """
         Return pure per-segment localized posterior samples mapped dimensionally.
 
-        If `sample_posterior()` has already been called, reuses the existing cached traces 
+        If `sample_posterior()` has already been called, reuses the existing cached traces
         without performing repetitive HMC integration. Otherwise naturally fits the model first.
 
         Parameters
         ----------
         n_draws : int, optional
-            Requested sample count extracted securely from the generated inference traces. 
+            Requested sample count extracted securely from the generated inference traces.
             Defaults to 1000.
 
         Returns
@@ -295,22 +294,16 @@ class HierarchicalBinaryModel(BaseModel):
                 successes[i, j] = int(np.sum(arr))
                 totals[i, j] = len(arr)
 
-        with pm.Model() as model:
+        with pm.Model():
             if self._use_noncentered:
                 mu_logit = pm.Normal("mu_logit", mu=0.0, sigma=2.0)
                 tau = pm.HalfCauchy("tau", beta=self.kappa_prior_beta)
 
-                offset = pm.Normal(
-                    "offset", mu=0.0, sigma=1.0, shape=(n_seg, n_var)
-                )
+                offset = pm.Normal("offset", mu=0.0, sigma=1.0, shape=(n_seg, n_var))
 
-                logit_theta = pm.Deterministic(
-                    "logit_theta", mu_logit + tau * offset
-                )
+                logit_theta = pm.Deterministic("logit_theta", mu_logit + tau * offset)
 
-                theta = pm.Deterministic(
-                    "theta", pm.math.sigmoid(logit_theta)
-                )
+                theta = pm.Deterministic("theta", pm.math.sigmoid(logit_theta))
 
             else:
                 mu_global = pm.Beta(
@@ -321,9 +314,7 @@ class HierarchicalBinaryModel(BaseModel):
                 kappa = pm.HalfCauchy("kappa", beta=self.kappa_prior_beta)
 
                 alpha_seg = pm.Deterministic("alpha_seg", mu_global * kappa)
-                beta_seg = pm.Deterministic(
-                    "beta_seg", (1.0 - mu_global) * kappa
-                )
+                beta_seg = pm.Deterministic("beta_seg", (1.0 - mu_global) * kappa)
 
                 theta = pm.Beta(
                     "theta",
@@ -350,9 +341,7 @@ class HierarchicalBinaryModel(BaseModel):
 
         return trace
 
-    def _extract_by_segment(
-        self, trace: az.InferenceData, n_draws: int
-    ) -> np.ndarray:
+    def _extract_by_segment(self, trace: az.InferenceData, n_draws: int) -> np.ndarray:
         """Extract per-segment posterior samples from trace."""
 
         theta_vals = trace.posterior["theta"].values
@@ -458,9 +447,8 @@ class HierarchicalBinaryModel(BaseModel):
             # Shape: (chain, draw, n_seg, n_var)
             for i, seg in enumerate(self._segment_names):
                 seg_samples = theta_vals[:, :, i, :].flatten()
-                width = (
-                    np.percentile(seg_samples, 97.5)
-                    - np.percentile(seg_samples, 2.5)
+                width = np.percentile(seg_samples, 97.5) - np.percentile(
+                    seg_samples, 2.5
                 )
                 if width > WIDTH_THRESHOLD:
                     msg = (
@@ -483,7 +471,6 @@ class HierarchicalBinaryModel(BaseModel):
         return {
             "health": list(self._health_warnings),
             "segments": {
-                seg: list(msgs)
-                for seg, msgs in self._segment_warnings.items()
+                seg: list(msgs) for seg, msgs in self._segment_warnings.items()
             },
         }

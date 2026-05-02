@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-import numpy as np 
+import numpy as np
 import warnings
-from dataclasses import dataclass, field 
+from dataclasses import dataclass, field
 
 from argonx.decision_rules.guardrails import GuardrailBundle
+
 
 @dataclass
 class CompositeResult:
     """
     Structured outcome of a composite business metric calculation across variants.
-    
+
     This encapsulates the final scores, the distributions representing Bayesian uncertainty,
-    and the relative contributions of individual metrics. It serves as the primary data 
+    and the relative contributions of individual metrics. It serves as the primary data
     payload for rendering plotting results and making ultimate ship decisions.
     """
+
     score: dict[str, float]
     score_distribution: dict[str, np.ndarray]
     metric_contributions: dict[str, dict[str, float]]
@@ -25,20 +27,21 @@ class CompositeResult:
     threshold: float
     warnings: list[str] = field(default_factory=list)
 
+
 def _compute_hdi(samples: np.ndarray, prob: float = 0.94) -> tuple[float, float]:
     """
     Calculate the Highest Density Interval (HDI) for a given set of posterior draws.
-    
-    This function finds the shortest contiguous interval that contains a specified 
+
+    This function finds the shortest contiguous interval that contains a specified
     proportion of the distribution, which is characteristic of the HDI.
-    
+
     Parameters
     ----------
     samples : np.ndarray
         A 1-dimensional array of posterior draws.
     prob : float, optional
         The probability mass that should be contained within the interval, by default 0.94.
-        
+
     Returns
     -------
     tuple[float, float]
@@ -53,6 +56,7 @@ def _compute_hdi(samples: np.ndarray, prob: float = 0.94) -> tuple[float, float]
         float(sorted_samples[min_idx]),
         float(sorted_samples[min_idx + interval_idx]),
     )
+
 
 def compute_composite_score(
     primary_samples: np.ndarray,
@@ -96,7 +100,7 @@ def compute_composite_score(
     Returns
     -------
     CompositeResult
-        The comprehensive scoring breakdown, including expected scores, underlying distributions, 
+        The comprehensive scoring breakdown, including expected scores, underlying distributions,
         and interval estimations.
     """
 
@@ -135,22 +139,21 @@ def compute_composite_score(
     deltas = {}
     control_vals = primary_samples[:, c_idx]
     deltas["primary"] = primary_samples - control_vals[:, None]
-    
-    for m,s in guardrail_samples.items():
-        deltas[m] = s - s[:, c_idx][:, None]
 
+    for m, s in guardrail_samples.items():
+        deltas[m] = s - s[:, c_idx][:, None]
 
     score_per_draw: dict[str, np.ndarray] = {}
     contributions: dict[str, dict[str, float]] = {}
 
-    for i,v in enumerate(variant_names):
+    for i, v in enumerate(variant_names):
         if v == control:
             continue
 
         total = np.zeros(primary_samples.shape[0])
         contrib = {}
 
-        for m,d in deltas.items():
+        for m, d in deltas.items():
             w = weights.get(m, 0.0)
             dw = deterioration_weights.get(m, w)
 
@@ -172,39 +175,29 @@ def compute_composite_score(
 
     score = {v: float(np.mean(score_per_draw[v])) for v in variants}
 
-    prob_exceeds = {
-        v: float(np.mean(score_per_draw[v] > threshold))
-        for v in variants
-    }
+    prob_exceeds = {v: float(np.mean(score_per_draw[v] > threshold)) for v in variants}
 
-    gap_distribution = {
-        v: score_per_draw[v] - threshold for v in variants
-    }
+    gap_distribution = {v: score_per_draw[v] - threshold for v in variants}
 
-    gap_hdi = {
-        v: _compute_hdi(gap_distribution[v])
-        for v in variants
-    }
+    gap_hdi = {v: _compute_hdi(gap_distribution[v]) for v in variants}
 
     best = max(score, key=lambda k: score[k])
 
     if all(s < threshold for s in score.values()):
         collected.append("No variant exceeds composite threshold")
 
-    for v,s in score.items():
-        if s<0:
+    for v, s in score.items():
+        if s < 0:
             collected.append(f"{v} has negative composite score")
 
     return CompositeResult(
-        score = score,
-        score_distribution = score_per_draw,
-        metric_contributions = contributions,
-        prob_exceeds_threshold = prob_exceeds,
-        gap_distribution = gap_distribution,
-        gap_hdi = gap_hdi,
-        best_variant = best,
-        threshold = threshold,
-        warnings = collected
+        score=score,
+        score_distribution=score_per_draw,
+        metric_contributions=contributions,
+        prob_exceeds_threshold=prob_exceeds,
+        gap_distribution=gap_distribution,
+        gap_hdi=gap_hdi,
+        best_variant=best,
+        threshold=threshold,
+        warnings=collected,
     )
-
-    

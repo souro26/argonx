@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 
@@ -14,6 +13,7 @@ from .composite import CompositeResult, compute_composite_score
 @dataclass
 class DecisionResult:
     """Final decision output with structured interpretation."""
+
     state: str
     recommendation: str
     best_variant: str
@@ -171,7 +171,12 @@ def _build_reasons(
     return reasons
 
 
-def _collect_notes(metrics: MetricsBundle, guardrails: GuardrailBundle, joint: JointResult, composite: CompositeResult) -> list[str]:
+def _collect_notes(
+    metrics: MetricsBundle,
+    guardrails: GuardrailBundle,
+    joint: JointResult,
+    composite: CompositeResult,
+) -> list[str]:
     """Collect warnings and edge case signals from all components."""
     notes = []
 
@@ -210,7 +215,7 @@ def run_engine(
     """
     Run full decision pipeline from posterior samples.
 
-    Processes primary Bayesian updates, checks safety guardrails, isolates joint constraint 
+    Processes primary Bayesian updates, checks safety guardrails, isolates joint constraint
     probabilities, and coalesces performance metrics into a composite decision score.
     Returns a structured recommendation detailing business risk, primary strength,
     and significance.
@@ -226,13 +231,13 @@ def run_engine(
     guardrail_samples : dict[str, np.ndarray]
         Mapping of safety metric designations to their posterior distributions.
     config : dict
-        A master configuration dictionary determining parameters like decision thresholds, 
+        A master configuration dictionary determining parameters like decision thresholds,
         cvar bounds, rope regions, and guardrail limits.
 
     Returns
     -------
     DecisionResult
-        A bundled diagnostic report mapping qualitative shipping recommendations to 
+        A bundled diagnostic report mapping qualitative shipping recommendations to
         underlying statistical confidence intervals and rule triggers.
     """
 
@@ -316,18 +321,15 @@ def run_engine(
         state=state,
         recommendation=recommendation,
         best_variant=metrics.prob_best.best_variant,
-
         primary_strength=primary_strength,
         risk_level=risk_level,
         practical_significance=practical_significance,
         guardrail_status=guardrail_status,
         confidence=confidence,
-
         metrics=metrics,
         guardrails=guardrails,
         joint=joint,
         composite=composite,
-
         reasons=reasons,
         notes=notes,
     )

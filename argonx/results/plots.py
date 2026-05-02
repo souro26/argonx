@@ -25,7 +25,6 @@ Or call individual plot functions directly if you need custom composition:
 
 from __future__ import annotations
 
-import warnings
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -36,18 +35,18 @@ from scipy.stats import gaussian_kde
 
 _PALETTE = [
     "#2563EB",
-    "#16A34A",  
-    "#DC2626",  
-    "#9333EA",  
-    "#EA580C",  
-    "#0891B2",  
+    "#16A34A",
+    "#DC2626",
+    "#9333EA",
+    "#EA580C",
+    "#0891B2",
 ]
 
-_ROPE_COLOUR   = "#FCA5A5"   
-_PASS_COLOUR   = "#BBF7D0" 
-_FAIL_COLOUR   = "#FECACA"  
-_GRID_ALPHA    = 0.25
-_HDI_ALPHA     = 0.15
+_ROPE_COLOUR = "#FCA5A5"
+_PASS_COLOUR = "#BBF7D0"
+_FAIL_COLOUR = "#FECACA"
+_GRID_ALPHA = 0.25
+_HDI_ALPHA = 0.15
 _KDE_LINEWIDTH = 2.0
 
 
@@ -65,18 +64,23 @@ def _compute_hdi(samples: np.ndarray, hdi_prob: float = 0.95) -> tuple[float, fl
     n_intervals = n - interval_width
     widths = sorted_samples[interval_width:] - sorted_samples[:n_intervals]
     min_idx = int(np.argmin(widths))
-    return float(sorted_samples[min_idx]), float(sorted_samples[min_idx + interval_width])
+    return float(sorted_samples[min_idx]), float(
+        sorted_samples[min_idx + interval_width]
+    )
 
 
 def _validate_samples(samples: np.ndarray, variant_names: list[str]) -> None:
     if samples.ndim != 2:
-        raise ValueError(f"samples must be 2D (n_draws, n_variants), got shape {samples.shape}")
+        raise ValueError(
+            f"samples must be 2D (n_draws, n_variants), got shape {samples.shape}"
+        )
     if samples.shape[1] != len(variant_names):
         raise ValueError(
             f"samples has {samples.shape[1]} columns but {len(variant_names)} variant names"
         )
     if np.any(~np.isfinite(samples)):
         raise ValueError("samples contains NaN or Inf values")
+
 
 def plot_posteriors(
     samples: np.ndarray,
@@ -134,11 +138,15 @@ def plot_posteriors(
         ax.fill_between(x, y, where=mask, color=colour, alpha=_HDI_ALPHA, zorder=2)
 
         for bound in (hdi_low, hdi_high):
-            ax.axvline(bound, color=colour, linestyle="--", linewidth=0.8, alpha=0.6, zorder=2)
+            ax.axvline(
+                bound, color=colour, linestyle="--", linewidth=0.8, alpha=0.6, zorder=2
+            )
 
     ax.set_xlabel(metric_name, fontsize=11)
     ax.set_ylabel("Posterior density", fontsize=11)
-    ax.set_title(f"Posterior distributions — {metric_name}", fontsize=13, fontweight="bold")
+    ax.set_title(
+        f"Posterior distributions — {metric_name}", fontsize=13, fontweight="bold"
+    )
     ax.legend(framealpha=0.9, fontsize=10)
     ax.grid(axis="y", alpha=_GRID_ALPHA)
     ax.spines["top"].set_visible(False)
@@ -156,6 +164,7 @@ def plot_posteriors(
     )
 
     return ax
+
 
 def plot_lift(
     samples: np.ndarray,
@@ -212,7 +221,9 @@ def plot_lift(
 
     rope_low, rope_high = rope_bounds
 
-    ax.axvspan(rope_low, rope_high, color=_ROPE_COLOUR, alpha=0.35, zorder=1, label="ROPE")
+    ax.axvspan(
+        rope_low, rope_high, color=_ROPE_COLOUR, alpha=0.35, zorder=1, label="ROPE"
+    )
     ax.axvline(0, color="black", linewidth=0.8, linestyle="-", alpha=0.4, zorder=2)
 
     variant_idx = 0
@@ -222,7 +233,7 @@ def plot_lift(
 
         variant_draws = samples[:, i]
         lift_draws = (variant_draws - control_draws) / denom
-        colour = _colour(variant_idx + 1) 
+        colour = _colour(variant_idx + 1)
         variant_idx += 1
 
         kde = gaussian_kde(lift_draws, bw_method="scott")
@@ -238,7 +249,9 @@ def plot_lift(
         mask = (x >= hdi_low_lift) & (x <= hdi_high_lift)
         ax.fill_between(x, y, where=mask, color=colour, alpha=_HDI_ALPHA, zorder=2)
 
-        prob_practical = float(np.mean((lift_draws < rope_low) | (lift_draws > rope_high)))
+        prob_practical = float(
+            np.mean((lift_draws < rope_low) | (lift_draws > rope_high))
+        )
         mean_lift = float(np.mean(lift_draws))
 
         y_peak = float(np.atleast_1d(kde(np.atleast_1d(mean_lift)))[0])
@@ -263,6 +276,7 @@ def plot_lift(
     ax.spines["right"].set_visible(False)
 
     return ax
+
 
 def plot_prob_best(
     prob_best: dict[str, float],
@@ -354,6 +368,7 @@ def plot_prob_best(
     )
 
     return ax
+
 
 def plot_expected_loss(
     expected_loss: dict[str, float],
@@ -457,6 +472,7 @@ def plot_expected_loss(
 
     return ax
 
+
 def plot_guardrails(
     guardrail_results: list,
     ax: Optional[plt.Axes] = None,
@@ -487,10 +503,13 @@ def plot_guardrails(
 
     if not guardrail_results:
         ax.text(
-            0.5, 0.5,
+            0.5,
+            0.5,
             "No guardrail metrics defined",
-            ha="center", va="center",
-            fontsize=12, color="grey",
+            ha="center",
+            va="center",
+            fontsize=12,
+            color="grey",
             transform=ax.transAxes,
         )
         ax.set_title("Guardrail status", fontsize=13, fontweight="bold")
@@ -566,6 +585,7 @@ def plot_guardrails(
 
     return ax
 
+
 def plot_all(
     samples: np.ndarray,
     variant_names: list[str],
@@ -630,19 +650,23 @@ def plot_all(
     )
 
     plot_posteriors(
-        samples, variant_names, metric_name=metric_name,
-        hdi_prob=hdi_prob, ax=axes[0, 0]
+        samples,
+        variant_names,
+        metric_name=metric_name,
+        hdi_prob=hdi_prob,
+        ax=axes[0, 0],
     )
     plot_lift(
-        samples, variant_names, control=control,
-        rope_bounds=rope_bounds, hdi_prob=hdi_prob, ax=axes[0, 1]
+        samples,
+        variant_names,
+        control=control,
+        rope_bounds=rope_bounds,
+        hdi_prob=hdi_prob,
+        ax=axes[0, 1],
     )
-    plot_prob_best(
-        prob_best, threshold=prob_best_threshold, ax=axes[0, 2]
-    )
+    plot_prob_best(prob_best, threshold=prob_best_threshold, ax=axes[0, 2])
     plot_expected_loss(
-        expected_loss, cvar_loss=cvar_loss,
-        loss_threshold=loss_threshold, ax=axes[1, 0]
+        expected_loss, cvar_loss=cvar_loss, loss_threshold=loss_threshold, ax=axes[1, 0]
     )
     plot_guardrails(guardrail_results, ax=axes[1, 1])
 
@@ -675,7 +699,8 @@ def plot_all(
     border_colour = "#CA8A04" if n_failed > 0 else "#16A34A"
 
     ax_summary.text(
-        0.5, 0.55,
+        0.5,
+        0.55,
         summary_text,
         transform=ax_summary.transAxes,
         ha="center",

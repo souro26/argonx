@@ -12,23 +12,25 @@ from matplotlib.colors import ListedColormap
 from argonx.decision_rules.metrics import compute_expected_loss, compute_prob_best
 
 
-_DEFAULT_LOSS_THRESHOLD       = 0.01   
-_DEFAULT_PROB_BEST_MIN        = 0.80  
-_DEFAULT_MIN_SAMPLE_SIZE      = 1000 
-_DEFAULT_BURN_IN_USERS        = 500 
-_DEFAULT_MIN_CHECKPOINTS      = 3      
-_DEFAULT_FUTILITY_THRESHOLD   = 0.80   
-_DEFAULT_IMBALANCE_TOLERANCE  = 0.10   
-_DEFAULT_NOVELTY_DAYS         = 14     
-_DEFAULT_ROPE_BOUNDS          = (-0.01, 0.01)  
+_DEFAULT_LOSS_THRESHOLD = 0.01
+_DEFAULT_PROB_BEST_MIN = 0.80
+_DEFAULT_MIN_SAMPLE_SIZE = 1000
+_DEFAULT_BURN_IN_USERS = 500
+_DEFAULT_MIN_CHECKPOINTS = 3
+_DEFAULT_FUTILITY_THRESHOLD = 0.80
+_DEFAULT_IMBALANCE_TOLERANCE = 0.10
+_DEFAULT_NOVELTY_DAYS = 14
+_DEFAULT_ROPE_BOUNDS = (-0.01, 0.01)
 
-_USERS_ESTIMATE_FLOOR         = 100  
-_USERS_ESTIMATE_SAFETY_FACTOR = 1.25 
-_MIN_DRAWS_WARNING            = 500    
+_USERS_ESTIMATE_FLOOR = 100
+_USERS_ESTIMATE_SAFETY_FACTOR = 1.25
+_MIN_DRAWS_WARNING = 500
+
 
 @dataclass
 class TrafficDiagnostics:
     """Traffic health check at a single checkpoint."""
+
     balanced: bool
     observed_shares: dict[str, float]
     expected_shares: dict[str, float]
@@ -40,6 +42,7 @@ class TrafficDiagnostics:
 @dataclass
 class UsersNeededEstimate:
     """Per-variant estimate of additional users needed at current effect size."""
+
     additional_users: dict[str, int]
     days_to_completion: dict[str, Optional[float]]
     basis: str
@@ -50,6 +53,7 @@ class UsersNeededEstimate:
 @dataclass
 class CheckpointSnapshot:
     """Complete evidence state at a single checkpoint."""
+
     checkpoint_index: int
     n_users_per_variant: dict[str, int]
     total_users: int
@@ -72,6 +76,7 @@ class CheckpointSnapshot:
 @dataclass
 class StoppingResult:
     """Full output of a sequential stopping evaluation."""
+
     safe_to_stop: bool
     stopping_reason: Literal["winner", "futility", "none"]
     best_variant: str
@@ -87,6 +92,7 @@ class StoppingResult:
     checkpoint_index: int
     trajectory: list[CheckpointSnapshot] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
 
 def _check_traffic_balance(
     n_users_per_variant: dict[str, int],
@@ -127,6 +133,7 @@ def _check_traffic_balance(
         flagged_variants=flagged,
     )
 
+
 def _check_futility(
     samples: np.ndarray,
     variant_names: list[str],
@@ -135,7 +142,6 @@ def _check_futility(
     rope_high: float,
     futility_rope_threshold: float,
 ) -> bool:
-    
     control_idx = variant_names.index(control)
     control_draws = samples[:, control_idx]
 
@@ -148,16 +154,16 @@ def _check_futility(
             continue
 
         variant_draws = samples[:, i]
-        lift = (
-            (variant_draws[nonzero_mask] - control_draws[nonzero_mask])
-            / np.abs(control_draws[nonzero_mask])
+        lift = (variant_draws[nonzero_mask] - control_draws[nonzero_mask]) / np.abs(
+            control_draws[nonzero_mask]
         )
         prob_inside = float(np.mean((lift >= rope_low) & (lift <= rope_high)))
 
         if prob_inside < futility_rope_threshold:
-            return False  
+            return False
 
-    return True 
+    return True
+
 
 def _estimate_users_needed(
     best_variant: str,
@@ -177,13 +183,13 @@ def _estimate_users_needed(
     best_p = prob_best.get(best_variant, 0.0)
 
     loss_gap = best_loss - loss_threshold
-    prob_gap = prob_best_min - best_p       
+    prob_gap = prob_best_min - best_p
 
     if loss_gap <= 0 and prob_gap <= 0:
         return None
 
     if best_loss <= 0:
-        return None 
+        return None
 
     additional_per_variant: dict[str, int] = {}
     days_per_variant: dict[str, Optional[float]] = {}
@@ -201,7 +207,7 @@ def _estimate_users_needed(
 
         if loss_gap > 0:
             ratio = best_loss / loss_threshold
-            n_target = n_current * (ratio ** 2)
+            n_target = n_current * (ratio**2)
             additional = max(
                 int(np.ceil((n_target - n_current) * safety_factor)),
                 users_floor,
@@ -219,7 +225,9 @@ def _estimate_users_needed(
 
         if daily_traffic_per_variant and v in daily_traffic_per_variant:
             rate = daily_traffic_per_variant[v]
-            days_per_variant[v] = round(additional / max(rate, 1), 1) if rate > 0 else None
+            days_per_variant[v] = (
+                round(additional / max(rate, 1), 1) if rate > 0 else None
+            )
         else:
             days_per_variant[v] = None
 
@@ -237,6 +245,7 @@ def _estimate_users_needed(
             "order-of-magnitude guidance only."
         ),
     )
+
 
 def _build_recommendation(
     safe_to_stop: bool,
@@ -271,7 +280,11 @@ def _build_recommendation(
             f"and P(best) = {best_p:.3f}. Evidence is sufficient."
         )
         if novelty_warning:
-            age_str = f"{experiment_age_days:.1f}" if experiment_age_days is not None else "unknown"
+            age_str = (
+                f"{experiment_age_days:.1f}"
+                if experiment_age_days is not None
+                else "unknown"
+            )
             parts.append(
                 f"NOTE: Novelty warning active (experiment age: {age_str} days, "
                 f"threshold: {novelty_warning_days} days). Verify effect persists "
@@ -288,14 +301,15 @@ def _build_recommendation(
         return " ".join(parts)
 
     parts.append(
-        f"CONTINUE EXPERIMENT. '{best_variant}' leads "
-        f"with P(best) = {best_p:.3f}."
+        f"CONTINUE EXPERIMENT. '{best_variant}' leads " f"with P(best) = {best_p:.3f}."
     )
 
     if not gate_states["burn_in"]:
         parts.append("Burn-in period not yet complete — data quality gate active.")
     elif not gate_states["sample_size"]:
-        parts.append("Minimum sample size not yet reached — statistical power gate active.")
+        parts.append(
+            "Minimum sample size not yet reached — statistical power gate active."
+        )
     elif not gate_states["min_checkpoints"]:
         parts.append("Minimum checkpoint count not yet reached.")
     else:
@@ -318,7 +332,11 @@ def _build_recommendation(
         )
 
     if novelty_warning:
-        age_str = f"{experiment_age_days:.1f}" if experiment_age_days is not None else "unknown"
+        age_str = (
+            f"{experiment_age_days:.1f}"
+            if experiment_age_days is not None
+            else "unknown"
+        )
         parts.append(
             f"Novelty warning: experiment is {age_str} days old "
             f"(threshold: {novelty_warning_days} days). "
@@ -337,11 +355,13 @@ def _build_recommendation(
             parts.append(
                 f"Estimated additional users needed ({users_needed.basis}-driven, "
                 f"{users_needed.safety_factor}x safety factor): "
-                + ", ".join(estimate_parts) + ". "
+                + ", ".join(estimate_parts)
+                + ". "
                 + users_needed.note
             )
 
     return " ".join(parts)
+
 
 def evaluate_stopping(
     samples: np.ndarray,
@@ -475,9 +495,7 @@ def evaluate_stopping(
 
     missing = set(variant_names) - set(n_users_per_variant.keys())
     if missing:
-        raise ValueError(
-            f"n_users_per_variant missing entries for: {sorted(missing)}"
-        )
+        raise ValueError(f"n_users_per_variant missing entries for: {sorted(missing)}")
 
     rope_low, rope_high = rope_bounds
     if rope_low >= rope_high:
@@ -537,8 +555,7 @@ def evaluate_stopping(
         collected_warnings.append(msg)
 
     novelty_warning = (
-        experiment_age_days is not None
-        and experiment_age_days < novelty_warning_days
+        experiment_age_days is not None and experiment_age_days < novelty_warning_days
     )
 
     if novelty_warning:
@@ -569,9 +586,7 @@ def evaluate_stopping(
     )
 
     winner_stopping = (
-        prerequisites_met
-        and loss_below_threshold
-        and prob_best_sufficient
+        prerequisites_met and loss_below_threshold and prob_best_sufficient
     )
 
     futility_triggered = prerequisites_met and _check_futility(
@@ -593,12 +608,12 @@ def evaluate_stopping(
         stopping_reason = "none"
 
     gate_states = {
-        "burn_in":          burn_in_complete,
-        "sample_size":      sample_size_reached,
-        "min_checkpoints":  min_checkpoints_reached,
-        "loss":             loss_below_threshold,
-        "prob_best":        prob_best_sufficient,
-        "traffic":          traffic.balanced,
+        "burn_in": burn_in_complete,
+        "sample_size": sample_size_reached,
+        "min_checkpoints": min_checkpoints_reached,
+        "loss": loss_below_threshold,
+        "prob_best": prob_best_sufficient,
+        "traffic": traffic.balanced,
     }
 
     users_needed: Optional[UsersNeededEstimate] = None
@@ -674,6 +689,7 @@ def evaluate_stopping(
         trajectory=trajectory,
         warnings=collected_warnings,
     )
+
 
 class StoppingChecker:
     """
@@ -853,9 +869,9 @@ class StoppingChecker:
             )
 
         _PALETTE = ["#2563EB", "#16A34A", "#DC2626", "#9333EA", "#EA580C", "#0891B2"]
-        _PASS_C  = "#BBF7D0"
-        _FAIL_C  = "#FECACA"
-        _GRID_A  = 0.18
+        _PASS_C = "#BBF7D0"
+        _FAIL_C = "#FECACA"
+        _GRID_A = 0.18
 
         snapshots = self._trajectory
         total_users = [s.total_users for s in snapshots]
@@ -866,24 +882,39 @@ class StoppingChecker:
         all_variants = list(snapshots[-1].prob_best.keys())
 
         fig, (ax_prob, ax_loss, ax_gates) = plt.subplots(
-            3, 1, figsize=figsize,
+            3,
+            1,
+            figsize=figsize,
             sharex=True,
             gridspec_kw={"height_ratios": [2, 2, 1.4]},
         )
         fig.suptitle(
             suptitle or "Sequential Stopping — Evidence Trajectory",
-            fontsize=14, fontweight="bold",
+            fontsize=14,
+            fontweight="bold",
         )
 
         for i, v in enumerate(all_variants):
             colour = _PALETTE[i % len(_PALETTE)]
             y = [s.prob_best.get(v, 0.0) for s in snapshots]
-            ax_prob.plot(x_vals, y, marker="o", markersize=4,
-                         linewidth=1.8, color=colour, label=v, zorder=3)
+            ax_prob.plot(
+                x_vals,
+                y,
+                marker="o",
+                markersize=4,
+                linewidth=1.8,
+                color=colour,
+                label=v,
+                zorder=3,
+            )
 
         ax_prob.axhline(
-            self.prob_best_min, color="#6B7280", linewidth=1.2, linestyle="--",
-            label=f"P(best) min = {self.prob_best_min:.2f}", zorder=2,
+            self.prob_best_min,
+            color="#6B7280",
+            linewidth=1.2,
+            linestyle="--",
+            label=f"P(best) min = {self.prob_best_min:.2f}",
+            zorder=2,
         )
         ax_prob.set_ylim(-0.02, 1.05)
         ax_prob.set_ylabel("P(variant is best)", fontsize=10)
@@ -896,20 +927,37 @@ class StoppingChecker:
         for i, v in enumerate(all_variants):
             colour = _PALETTE[i % len(_PALETTE)]
             y = [s.expected_loss.get(v, 0.0) for s in snapshots]
-            ax_loss.plot(x_vals, y, marker="o", markersize=4,
-                         linewidth=1.8, color=colour, label=v, zorder=3)
+            ax_loss.plot(
+                x_vals,
+                y,
+                marker="o",
+                markersize=4,
+                linewidth=1.8,
+                color=colour,
+                label=v,
+                zorder=3,
+            )
 
         ax_loss.axhline(
-            self.loss_threshold, color="#DC2626", linewidth=1.4, linestyle="--",
-            label=f"Loss threshold = {self.loss_threshold:.3f}", zorder=4,
+            self.loss_threshold,
+            color="#DC2626",
+            linewidth=1.4,
+            linestyle="--",
+            label=f"Loss threshold = {self.loss_threshold:.3f}",
+            zorder=4,
         )
         ax_loss.axhspan(
-            0.0, self.loss_threshold,
-            color=_PASS_C, alpha=0.3, zorder=1, label="Safe-to-stop zone",
+            0.0,
+            self.loss_threshold,
+            color=_PASS_C,
+            alpha=0.3,
+            zorder=1,
+            label="Safe-to-stop zone",
         )
         ax_loss.set_ylabel("Expected loss", fontsize=10)
         ax_loss.set_title(
-            "Expected loss — stop when best variant drops below threshold", fontsize=10,
+            "Expected loss — stop when best variant drops below threshold",
+            fontsize=10,
         )
         ax_loss.legend(framealpha=0.9, fontsize=9, loc="upper right")
         ax_loss.grid(axis="both", alpha=_GRID_A)
@@ -917,23 +965,31 @@ class StoppingChecker:
         ax_loss.spines["right"].set_visible(False)
 
         gate_keys = [
-            "burn_in", "sample_size", "min_checkpoints",
-            "loss", "prob_best", "traffic",
+            "burn_in",
+            "sample_size",
+            "min_checkpoints",
+            "loss",
+            "prob_best",
+            "traffic",
         ]
         gate_labels = [
-            "Burn-in", "Sample size", "Min checkpoints",
-            "Loss < threshold", "P(best) ≥ min", "Traffic balance",
+            "Burn-in",
+            "Sample size",
+            "Min checkpoints",
+            "Loss < threshold",
+            "P(best) ≥ min",
+            "Traffic balance",
         ]
 
         gate_matrix = np.zeros((len(gate_keys), len(snapshots)))
         for j, snap in enumerate(snapshots):
             gate_vals = {
-                "burn_in":          snap.burn_in_complete,
-                "sample_size":      snap.sample_size_reached,
-                "min_checkpoints":  snap.min_checkpoints_reached,
-                "loss":             snap.loss_below_threshold,
-                "prob_best":        snap.prob_best_sufficient,
-                "traffic":          snap.traffic_balanced,
+                "burn_in": snap.burn_in_complete,
+                "sample_size": snap.sample_size_reached,
+                "min_checkpoints": snap.min_checkpoints_reached,
+                "loss": snap.loss_below_threshold,
+                "prob_best": snap.prob_best_sufficient,
+                "traffic": snap.traffic_balanced,
             }
             for i, gk in enumerate(gate_keys):
                 gate_matrix[i, j] = 1.0 if gate_vals[gk] else 0.0
@@ -943,7 +999,8 @@ class StoppingChecker:
             gate_matrix,
             aspect="auto",
             cmap=cmap,
-            vmin=0, vmax=1,
+            vmin=0,
+            vmax=1,
             extent=[x_vals[0], x_vals[-1], -0.5, len(gate_keys) - 0.5],
             origin="lower",
             zorder=2,
@@ -957,24 +1014,37 @@ class StoppingChecker:
 
         pass_patch = mpatches.Patch(color=_PASS_C, label="Gate passed")
         fail_patch = mpatches.Patch(color=_FAIL_C, label="Gate blocked")
-        ax_gates.legend(handles=[pass_patch, fail_patch], fontsize=8,
-                        loc="upper left", framealpha=0.9)
+        ax_gates.legend(
+            handles=[pass_patch, fail_patch],
+            fontsize=8,
+            loc="upper left",
+            framealpha=0.9,
+        )
 
         stop_snaps = [s for s in snapshots if s.safe_to_stop]
         if stop_snaps:
             first_stop = stop_snaps[0]
-            stop_x = first_stop.total_users if use_users_x else first_stop.checkpoint_index
+            stop_x = (
+                first_stop.total_users if use_users_x else first_stop.checkpoint_index
+            )
             for ax in (ax_prob, ax_loss, ax_gates):
                 ax.axvline(
-                    stop_x, color="#16A34A", linewidth=1.5,
-                    linestyle=":", alpha=0.85, zorder=5,
+                    stop_x,
+                    color="#16A34A",
+                    linewidth=1.5,
+                    linestyle=":",
+                    alpha=0.85,
+                    zorder=5,
                 )
             ax_prob.annotate(
                 f"Stop: {first_stop.stopping_reason}",
                 xy=(stop_x, 0.5),
                 xycoords=("data", "axes fraction"),
-                xytext=(6, 0), textcoords="offset points",
-                fontsize=8, color="#16A34A", fontweight="bold",
+                xytext=(6, 0),
+                textcoords="offset points",
+                fontsize=8,
+                color="#16A34A",
+                fontweight="bold",
             )
 
         fig.tight_layout()

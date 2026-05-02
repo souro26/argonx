@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.collections as mcoll
@@ -26,6 +27,7 @@ from argonx.results.plots import (
 @dataclass
 class _GuardrailResult:
     """Stub guardrail result used in plot tests."""
+
     metric: str
     variant: str
     prob_degraded: float
@@ -92,10 +94,12 @@ class TestInputValidation:
 
     def test_plot_lift_near_zero_control_raises(self):
         rng = np.random.default_rng(1)
-        samples = np.column_stack([
-            rng.uniform(0, 1e-10, 800),
-            rng.lognormal(0, 0.3, 800),
-        ])
+        samples = np.column_stack(
+            [
+                rng.uniform(0, 1e-10, 800),
+                rng.lognormal(0, 0.3, 800),
+            ]
+        )
         with pytest.raises(ValueError, match="near zero"):
             plot_lift(samples, VARIANTS_2, control="control")
 
@@ -160,12 +164,16 @@ class TestCurveCount:
 
     def test_posteriors_one_line_per_variant(self):
         ax = plot_posteriors(_samples(n_variants=2), VARIANTS_2)
-        labelled_lines = [l for l in ax.get_lines() if l.get_label() in VARIANTS_2]
+        labelled_lines = [
+            line for line in ax.get_lines() if line.get_label() in VARIANTS_2
+        ]
         assert len(labelled_lines) == len(VARIANTS_2)
 
     def test_posteriors_three_variants_three_lines(self):
         ax = plot_posteriors(_samples(n_variants=3), VARIANTS_3)
-        labelled_lines = [l for l in ax.get_lines() if l.get_label() in VARIANTS_3]
+        labelled_lines = [
+            line for line in ax.get_lines() if line.get_label() in VARIANTS_3
+        ]
         assert len(labelled_lines) == 3
 
     def test_prob_best_one_bar_per_variant(self):
@@ -182,14 +190,20 @@ class TestCurveCount:
 
     def test_lift_excludes_control_from_curves(self):
         ax = plot_lift(_samples(n_variants=2), VARIANTS_2, control="control")
-        labelled = [l.get_label() for l in ax.get_lines()
-                    if not l.get_label().startswith("_")]
+        labelled = [
+            line.get_label()
+            for line in ax.get_lines()
+            if not line.get_label().startswith("_")
+        ]
         assert "control" not in labelled
 
     def test_lift_three_variants_two_curves(self):
         ax = plot_lift(_samples(n_variants=3), VARIANTS_3, control="control")
-        non_control_labels = [l.get_label() for l in ax.get_lines()
-                              if l.get_label() in ("variant_b", "variant_c")]
+        non_control_labels = [
+            line.get_label()
+            for line in ax.get_lines()
+            if line.get_label() in ("variant_b", "variant_c")
+        ]
         assert len(non_control_labels) == 2
 
 
@@ -199,8 +213,9 @@ class TestPlotAllSummary:
     def teardown_method(self, _):
         _close_figures()
 
-    def _make_fig(self, winner: str, variants: list[str],
-                  guardrail_results: list | None = None) -> plt.Figure:
+    def _make_fig(
+        self, winner: str, variants: list[str], guardrail_results: list | None = None
+    ) -> plt.Figure:
         samples = _samples(n_variants=len(variants))
         return plot_all(
             samples=samples,
@@ -237,7 +252,7 @@ class TestPlotAllSummary:
         fig = self._make_fig(winner="variant_b", variants=VARIANTS_2)
         summary = self._summary_text(fig)
         lines = summary.split("\n")
-        best_line = next((l for l in lines if "Best variant" in l), "")
+        best_line = next((line for line in lines if "Best variant" in line), "")
         assert "control" not in best_line
 
     def test_summary_winner_is_argmax_of_prob_best(self):
@@ -247,16 +262,22 @@ class TestPlotAllSummary:
 
     def test_summary_flags_guardrail_violation(self):
         failed_gr = _GuardrailResult("error_rate", "variant_b", 0.85, False, 0.10)
-        fig = self._make_fig(winner="variant_b", variants=VARIANTS_2,
-                             guardrail_results=[failed_gr])
+        fig = self._make_fig(
+            winner="variant_b", variants=VARIANTS_2, guardrail_results=[failed_gr]
+        )
         summary = self._summary_text(fig)
-        assert ("guardrail" in summary.lower() or "violation" in summary.lower()
-                or "review" in summary.lower() or "⚠" in summary)
+        assert (
+            "guardrail" in summary.lower()
+            or "violation" in summary.lower()
+            or "review" in summary.lower()
+            or "⚠" in summary
+        )
 
     def test_summary_no_warning_when_all_guardrails_pass(self):
         passed_gr = _GuardrailResult("error_rate", "variant_b", 0.03, True, 0.10)
-        fig = self._make_fig(winner="variant_b", variants=VARIANTS_2,
-                             guardrail_results=[passed_gr])
+        fig = self._make_fig(
+            winner="variant_b", variants=VARIANTS_2, guardrail_results=[passed_gr]
+        )
         summary = self._summary_text(fig)
         assert "⚠" not in summary
 
@@ -266,8 +287,9 @@ class TestPlotAllSummary:
             _GuardrailResult("latency", "variant_b", 0.04, True, 0.10),
             _GuardrailResult("crash_rate", "variant_b", 0.60, False, 0.10),
         ]
-        fig = self._make_fig(winner="variant_b", variants=VARIANTS_2,
-                             guardrail_results=grs)
+        fig = self._make_fig(
+            winner="variant_b", variants=VARIANTS_2, guardrail_results=grs
+        )
         summary = self._summary_text(fig)
         assert "1/3" in summary
 
@@ -279,7 +301,6 @@ class TestCVaRMarkers:
         _close_figures()
 
     def test_cvar_marker_not_left_of_expected_loss_bar(self):
-        variants = VARIANTS_2
         expected_loss = {"control": 0.040, "variant_b": 0.003}
         cvar_loss = {"control": 0.065, "variant_b": 0.007}
 
@@ -290,12 +311,14 @@ class TestCVaRMarkers:
             y_center = patch.get_y() + patch.get_height() / 2
             bar_data[round(y_center, 3)] = patch.get_width()
 
-        marker_xs = [line.get_xdata()[0] for line in ax.lines
-                     if line.get_marker() not in ("None", None, "")]
+        marker_xs = [
+            line.get_xdata()[0]
+            for line in ax.lines
+            if line.get_marker() not in ("None", None, "")
+        ]
 
         for marker_x in marker_xs:
-            closest_bar_width = min(bar_data.values(),
-                                    key=lambda w: abs(w - marker_x))
+            closest_bar_width = min(bar_data.values(), key=lambda w: abs(w - marker_x))
             assert marker_x >= closest_bar_width - 1e-9, (
                 f"CVaR marker at x={marker_x:.4f} is left of expected loss "
                 f"bar width={closest_bar_width:.4f}. Plot contradicts "
@@ -304,8 +327,9 @@ class TestCVaRMarkers:
 
     def test_cvar_markers_absent_when_cvar_not_provided(self):
         ax = plot_expected_loss({"control": 0.04, "variant_b": 0.003})
-        marker_lines = [l for l in ax.lines
-                        if l.get_marker() not in ("None", None, "")]
+        marker_lines = [
+            line for line in ax.lines if line.get_marker() not in ("None", None, "")
+        ]
         assert len(marker_lines) == 0
 
     def test_cvar_markers_present_when_cvar_provided(self):
@@ -313,8 +337,9 @@ class TestCVaRMarkers:
             {"control": 0.04, "variant_b": 0.003},
             cvar_loss={"control": 0.07, "variant_b": 0.006},
         )
-        marker_lines = [l for l in ax.lines
-                        if l.get_marker() not in ("None", None, "")]
+        marker_lines = [
+            line for line in ax.lines if line.get_marker() not in ("None", None, "")
+        ]
         assert len(marker_lines) > 0
 
 
@@ -338,7 +363,7 @@ class TestGuardrailColouring:
             RGB values in [0, 1].
         """
         h = hex_colour.lstrip("#")
-        return tuple(int(h[i:i+2], 16) / 255 for i in (0, 2, 4))
+        return tuple(int(h[i : i + 2], 16) / 255 for i in (0, 2, 4))
 
     def test_passing_guardrail_bar_is_not_red(self):
         grs = [_GuardrailResult("latency", "variant_b", 0.04, True, 0.10)]
@@ -346,9 +371,9 @@ class TestGuardrailColouring:
         fail_rgb = self._hex_to_rgb(_FAIL_COLOUR)
         for patch in ax.patches:
             fc = patch.get_facecolor()[:3]
-            assert not np.allclose(fc, fail_rgb, atol=0.01), (
-                "Passing guardrail bar is coloured red — pass/fail colours swapped"
-            )
+            assert not np.allclose(
+                fc, fail_rgb, atol=0.01
+            ), "Passing guardrail bar is coloured red — pass/fail colours swapped"
 
     def test_failing_guardrail_bar_is_not_green(self):
         grs = [_GuardrailResult("error_rate", "variant_b", 0.85, False, 0.10)]
@@ -356,14 +381,14 @@ class TestGuardrailColouring:
         pass_rgb = self._hex_to_rgb(_PASS_COLOUR)
         for patch in ax.patches:
             fc = patch.get_facecolor()[:3]
-            assert not np.allclose(fc, pass_rgb, atol=0.01), (
-                "Failing guardrail bar is coloured green — pass/fail colours swapped"
-            )
+            assert not np.allclose(
+                fc, pass_rgb, atol=0.01
+            ), "Failing guardrail bar is coloured green — pass/fail colours swapped"
 
     def test_mixed_guardrails_each_coloured_correctly(self):
         grs = [
             _GuardrailResult("error_rate", "variant_b", 0.85, False, 0.10),
-            _GuardrailResult("latency",    "variant_b", 0.04, True,  0.10),
+            _GuardrailResult("latency", "variant_b", 0.04, True, 0.10),
         ]
         ax = plot_guardrails(grs)
         pass_rgb = self._hex_to_rgb(_PASS_COLOUR)
@@ -482,21 +507,22 @@ class TestROPEShading:
         _close_figures()
 
     def test_lift_plot_has_rope_shading(self):
-        ax = plot_lift(_samples(), VARIANTS_2, control="control",
-                       rope_bounds=(-0.05, 0.05))
-        filled_regions = [c for c in ax.collections
-                          if isinstance(c, mcoll.PolyCollection)]
+        ax = plot_lift(
+            _samples(), VARIANTS_2, control="control", rope_bounds=(-0.05, 0.05)
+        )
+        filled_regions = [
+            c for c in ax.collections if isinstance(c, mcoll.PolyCollection)
+        ]
         assert len(filled_regions) > 0
 
     def test_lift_hdi_region_is_shaded(self):
         ax = plot_lift(_samples(), VARIANTS_2, control="control")
         poly_regions = [
-            c for c in ax.collections
-            if isinstance(c, mcoll.PolyCollection)
+            c for c in ax.collections if isinstance(c, mcoll.PolyCollection)
         ]
         patch_regions = ax.patches
 
-        assert len(poly_regions) >= 1 
+        assert len(poly_regions) >= 1
         assert len(patch_regions) >= 1
 
 
@@ -528,7 +554,7 @@ class TestPlotAllGrid:
     def test_plot_all_with_guardrail_violations_does_not_crash(self):
         grs = [
             _GuardrailResult("error_rate", "variant_b", 0.82, False, 0.10),
-            _GuardrailResult("latency",    "variant_b", 0.04, True,  0.10),
+            _GuardrailResult("latency", "variant_b", 0.04, True, 0.10),
         ]
         fig = self._make_plot_all(guardrail_results=grs)
         assert isinstance(fig, plt.Figure)

@@ -7,49 +7,54 @@ from typing import Callable
 
 from argonx.models.binary_model import BinaryModel, HierarchicalBinaryModel
 from argonx.models.lognormal_model import LogNormalModel, HierarchicalLogNormalModel
-from argonx.models.gaussian_model import GaussianModel, HierarchicalGaussianModel, StudentTModel, HierarchicalStudentTModel
+from argonx.models.gaussian_model import (
+    GaussianModel,
+    HierarchicalGaussianModel,
+    StudentTModel,
+    HierarchicalStudentTModel,
+)
 from argonx.models.count_model import PoissonModel, HierarchicalPoissonModel
 from argonx.decision_rules.engine import run_engine
-from argonx.results.result import Results
-from argonx.decision_rules.engine import run_engine, DecisionResult
+from argonx.results import Results
+from argonx.decision_rules.engine import DecisionResult
 
 
 _MODEL_REGISTRY = {
-    "binary":    (BinaryModel,    HierarchicalBinaryModel),
+    "binary": (BinaryModel, HierarchicalBinaryModel),
     "lognormal": (LogNormalModel, HierarchicalLogNormalModel),
-    "gaussian":  (GaussianModel,  HierarchicalGaussianModel),
-    "studentt":  (StudentTModel,  HierarchicalStudentTModel),
-    "poisson":   (PoissonModel,   HierarchicalPoissonModel),
+    "gaussian": (GaussianModel, HierarchicalGaussianModel),
+    "studentt": (StudentTModel, HierarchicalStudentTModel),
+    "poisson": (PoissonModel, HierarchicalPoissonModel),
 }
 
 
 _ALLOWED_CONFIG_KEYS = {
-    "prob_best_strong":         (float, (0.0, 1.0)),
-    "prob_best_moderate":       (float, (0.0, 1.0)),
-    "expected_loss_max":        (float, (0.0, None)),
-    "cvar_ratio_max":           (float, (1.0, None)),
-    "rope_practical_min":       (float, (0.0, 1.0)),
-    "alpha":                    (float, (0.0, 1.0)),
-    "hdi_prob":                 (float, (0.0, 1.0)),
-    "guardrail_thresholds":     (dict,  None),
-    "guardrail_penalty":        (float, (0.0, None)),
-    "deterioration_weights":    (dict,  None),
-    "metrics_to_join":          (list,  None),
-    "composite_threshold":      (float, None),
-    "primary_lower_is_better":  (bool,  None),
-    "lower_is_better":          (dict,  None),
+    "prob_best_strong": (float, (0.0, 1.0)),
+    "prob_best_moderate": (float, (0.0, 1.0)),
+    "expected_loss_max": (float, (0.0, None)),
+    "cvar_ratio_max": (float, (1.0, None)),
+    "rope_practical_min": (float, (0.0, 1.0)),
+    "alpha": (float, (0.0, 1.0)),
+    "hdi_prob": (float, (0.0, 1.0)),
+    "guardrail_thresholds": (dict, None),
+    "guardrail_penalty": (float, (0.0, None)),
+    "deterioration_weights": (dict, None),
+    "metrics_to_join": (list, None),
+    "composite_threshold": (float, None),
+    "primary_lower_is_better": (bool, None),
+    "lower_is_better": (dict, None),
 }
 
 _DEFAULT_CONFIG = {
-    "prob_best_strong":     0.95,
-    "prob_best_moderate":   0.80,
-    "expected_loss_max":    0.01,
-    "cvar_ratio_max":       5.0,
-    "rope_practical_min":   0.80,
-    "alpha":                0.95,
-    "hdi_prob":             0.95,
+    "prob_best_strong": 0.95,
+    "prob_best_moderate": 0.80,
+    "expected_loss_max": 0.01,
+    "cvar_ratio_max": 5.0,
+    "rope_practical_min": 0.80,
+    "alpha": 0.95,
+    "hdi_prob": 0.95,
     "guardrail_thresholds": {},
-    "guardrail_penalty":    0.0,
+    "guardrail_penalty": 0.0,
 }
 
 
@@ -190,6 +195,7 @@ def _select_model(model_str: str, hierarchical: bool):
     flat, hier = _MODEL_REGISTRY[model_str]
     return hier if hierarchical else flat
 
+
 def _split_by_variant(
     data: pd.DataFrame,
     variant_col: str,
@@ -265,6 +271,7 @@ def _fit_and_sample(
 
     model.fit(variant_data)
     return model.sample_posterior(n_draws)
+
 
 def _split_by_segment_and_variant(
     data: pd.DataFrame,
@@ -444,11 +451,7 @@ def _collect_segment_guardrail_violations(
     violations: dict[str, list[str]] = {}
 
     for seg, decision in segment_results.items():
-        failed = [
-            g.metric
-            for g in decision.guardrails.guardrails
-            if not g.passed
-        ]
+        failed = [g.metric for g in decision.guardrails.guardrails if not g.passed]
         if failed:
             violations[seg] = failed
 
@@ -531,9 +534,14 @@ class Experiment:
         self.priors = priors
 
         _validate_inputs(
-            data, variant_col, primary_metric, model,
-            self.guardrails, self.lower_is_better,
-            segment_col, control,
+            data,
+            variant_col,
+            primary_metric,
+            model,
+            self.guardrails,
+            self.lower_is_better,
+            segment_col,
+            control,
         )
 
         self._variant_names = sorted(data[variant_col].unique().tolist())
@@ -586,7 +594,9 @@ class Experiment:
 
         full_config["rope_bounds"] = rope_bounds
 
-        override_keys = set(self.lower_is_better) & set(config.get("lower_is_better", {}))
+        override_keys = set(self.lower_is_better) & set(
+            config.get("lower_is_better", {})
+        )
         if override_keys:
             warnings.warn(
                 f"Overriding lower_is_better for: {sorted(override_keys)}",
@@ -637,12 +647,8 @@ class Experiment:
         guardrail_samples = {}
         for g in self.guardrails:
             s = _resolve_metric(self.data, g)
-            d = _split_by_variant(
-                self.data, self.variant_col, s, self._variant_names
-            )
-            guardrail_samples[g] = _fit_and_sample(
-                model_class, d, n_draws, random_seed
-            )
+            d = _split_by_variant(self.data, self.variant_col, s, self._variant_names)
+            guardrail_samples[g] = _fit_and_sample(model_class, d, n_draws, random_seed)
 
         decision = run_engine(
             samples=primary_samples,
@@ -662,8 +668,12 @@ class Experiment:
     ) -> Results:
         primary_series = _resolve_metric(self.data, self.primary_metric)
         primary_seg_data = _split_by_segment_and_variant(
-            self.data, self.variant_col, self.segment_col,
-            primary_series, self._segment_names, self._variant_names,
+            self.data,
+            self.variant_col,
+            self.segment_col,
+            primary_series,
+            self._segment_names,
+            self._variant_names,
         )
 
         primary_pop_samples, primary_seg_samples, primary_warnings = (
@@ -679,8 +689,12 @@ class Experiment:
         for g in self.guardrails:
             g_series = _resolve_metric(self.data, g)
             g_seg_data = _split_by_segment_and_variant(
-                self.data, self.variant_col, self.segment_col,
-                g_series, self._segment_names, self._variant_names,
+                self.data,
+                self.variant_col,
+                self.segment_col,
+                g_series,
+                self._segment_names,
+                self._variant_names,
             )
             g_pop, g_seg, g_warn = _fit_and_sample_hierarchical(
                 model_class, g_seg_data, n_draws, self.priors
@@ -735,7 +749,9 @@ class Experiment:
             aggregate_decision,
             config=full_config,
             segment_results=segment_results,
-            segment_guardrail_violations=seg_guardrail_violations if seg_guardrail_violations else None,
+            segment_guardrail_violations=seg_guardrail_violations
+            if seg_guardrail_violations
+            else None,
         )
 
     def __repr__(self):
