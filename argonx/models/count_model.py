@@ -387,7 +387,7 @@ class HierarchicalPoissonModel(BaseModel):
 
             low_ess = summary[summary["ess_bulk"] < 400]
             if len(low_ess) > 0:
-                msg = f"Low ESS for {len(low_ess)} parameters. " f"Increase n_draws."
+                msg = f"Low ESS for {len(low_ess)} parameters. Increase n_draws."
                 self._health_warnings.append(msg)
                 warnings.warn(msg, UserWarning, stacklevel=3)
         except Exception:

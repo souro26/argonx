@@ -96,9 +96,12 @@ def _call_evaluate(
 
     loss_result, prob_result = _mock_metrics(loss_values, prob_values, best_variant)
 
-    with patch(
-        "argonx.sequential.stopping.compute_expected_loss", return_value=loss_result
-    ), patch("argonx.sequential.stopping.compute_prob_best", return_value=prob_result):
+    with (
+        patch(
+            "argonx.sequential.stopping.compute_expected_loss", return_value=loss_result
+        ),
+        patch("argonx.sequential.stopping.compute_prob_best", return_value=prob_result),
+    ):
         return evaluate_stopping(
             samples=samples,
             variant_names=variant_names,
@@ -1159,10 +1162,14 @@ class TestStoppingChecker:
 
         loss_result, prob_result = _mock_metrics(loss_values, prob_values, best)
 
-        with patch(
-            "argonx.sequential.stopping.compute_expected_loss", return_value=loss_result
-        ), patch(
-            "argonx.sequential.stopping.compute_prob_best", return_value=prob_result
+        with (
+            patch(
+                "argonx.sequential.stopping.compute_expected_loss",
+                return_value=loss_result,
+            ),
+            patch(
+                "argonx.sequential.stopping.compute_prob_best", return_value=prob_result
+            ),
         ):
             return checker.update(
                 samples=samples,
