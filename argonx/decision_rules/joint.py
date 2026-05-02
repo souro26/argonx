@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 @dataclass
 class JointResult:
     """Joint policy satisfaction with correlation diagnostics."""
+
     joint_prob: dict[str, float]
     condition_probs: dict[str, dict[str, float]]
     independence_benchmark: dict[str, float]
@@ -42,9 +43,7 @@ def _validate_joint_inputs(
 
     if metrics_to_join is not None:
         if len(metrics_to_join) == 0:
-            raise ValueError(
-                "metrics_to_join is empty. Pass None for all guardrails."
-            )
+            raise ValueError("metrics_to_join is empty. Pass None for all guardrails.")
         unknown = [m for m in metrics_to_join if m not in guardrail_samples]
         if unknown:
             raise ValueError(f"Unknown metrics: {unknown}")
@@ -136,9 +135,9 @@ def compute_joint_probability(
     """
     Compute joint probability and correlation effects.
 
-    Calculates the empirical fraction of posterior draws where the primary metric 
+    Calculates the empirical fraction of posterior draws where the primary metric
     clears its threshold AND all selected guardrails simultaneous pass their constraints.
-    It evaluates whether correlations strictly penalize or benefit the joint policy 
+    It evaluates whether correlations strictly penalize or benefit the joint policy
     compared to considering metrics independent.
 
     Parameters
@@ -160,7 +159,7 @@ def compute_joint_probability(
     guardrail_thresholds : dict[str, float] | None, optional
         Thresholds determining maximum allowable degradation for guardrails.
     metrics_to_join : list[str] | None, optional
-        A specific subset of guardrail metrics to compute joint probabilities with. 
+        A specific subset of guardrail metrics to compute joint probabilities with.
         Defaults to evaluating all provided guardrails.
 
     Returns

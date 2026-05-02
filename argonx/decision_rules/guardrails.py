@@ -18,18 +18,20 @@ def _compute_severity(prob_degraded: float) -> str:
 @dataclass
 class GuardrailResult:
     """Result of a single guardrail check for one variant."""
+
     metric: str
     prob_degraded: float
     passed: bool
     threshold: float
     variant: str
-    severity: str 
-    expected_degradation: float    
+    severity: str
+    expected_degradation: float
 
 
 @dataclass
 class ConflictResult:
     """A detected conflict between primary metric and a guardrail."""
+
     metric: str
     prob_degraded: float
     threshold: float
@@ -42,8 +44,9 @@ class ConflictResult:
 @dataclass
 class GuardrailBundle:
     """All guardrail results and conflicts returned to the engine."""
+
     all_passed: bool
-    variant_passed: dict[str, bool]      # per-variant summary across all guardrails
+    variant_passed: dict[str, bool]  # per-variant summary across all guardrails
     guardrails: list[GuardrailResult]
     conflicts: list[ConflictResult]
     warnings: list[str] = field(default_factory=list)
@@ -89,19 +92,13 @@ def _validate_guardrail_inputs(
         )
 
     if not np.isfinite(samples).all():
-        raise ValueError(
-            "samples contain NaN or Inf values. Check model output."
-        )
+        raise ValueError("samples contain NaN or Inf values. Check model output.")
 
     if not 0 < threshold < 1:
-        raise ValueError(
-            f"threshold must be in (0, 1), got {threshold}"
-        )
+        raise ValueError(f"threshold must be in (0, 1), got {threshold}")
 
     if samples.shape[1] < 2:
-        raise ValueError(
-            "At least two variants required for guardrail check."
-        )
+        raise ValueError("At least two variants required for guardrail check.")
 
 
 def compute_guardrail(
@@ -138,7 +135,7 @@ def compute_guardrail(
     Returns
     -------
     list[GuardrailResult]
-        A collection of validation outcomes detailing the pass/fail state and 
+        A collection of validation outcomes detailing the pass/fail state and
         severity per variant.
     """
     _validate_guardrail_inputs(samples, variant_names, control, threshold)
@@ -164,20 +161,20 @@ def compute_guardrail(
         passed = prob_degraded < threshold
 
         expected_degradation = (
-            float(np.mean(np.abs(delta[degraded_mask])))
-            if degraded_mask.any()
-            else 0.0
+            float(np.mean(np.abs(delta[degraded_mask]))) if degraded_mask.any() else 0.0
         )
 
-        results.append(GuardrailResult(
-            metric=metric,
-            prob_degraded=prob_degraded,
-            passed=passed,
-            threshold=threshold,
-            variant=variant,
-            severity=_compute_severity(prob_degraded),
-            expected_degradation=expected_degradation,
-        ))
+        results.append(
+            GuardrailResult(
+                metric=metric,
+                prob_degraded=prob_degraded,
+                passed=passed,
+                threshold=threshold,
+                variant=variant,
+                severity=_compute_severity(prob_degraded),
+                expected_degradation=expected_degradation,
+            )
+        )
 
     return results
 
@@ -216,7 +213,7 @@ def compute_all_guardrails(
     Returns
     -------
     GuardrailBundle
-        A comprehensive aggregation containing pass statuses, complete evaluation results, 
+        A comprehensive aggregation containing pass statuses, complete evaluation results,
         conflicts to review, and any relevant runtime warnings.
     """
     collected_warnings = []
@@ -283,15 +280,17 @@ def compute_all_guardrails(
                 f"P(degraded)={result.prob_degraded:.3f} > threshold={result.threshold}. "
                 f"Human review required."
             )
-            conflicts.append(ConflictResult(
-                metric=result.metric,
-                prob_degraded=result.prob_degraded,
-                threshold=result.threshold,
-                message=msg,
-                variant=result.variant,
-                severity=result.severity,
-                expected_degradation=result.expected_degradation,
-            ))
+            conflicts.append(
+                ConflictResult(
+                    metric=result.metric,
+                    prob_degraded=result.prob_degraded,
+                    threshold=result.threshold,
+                    message=msg,
+                    variant=result.variant,
+                    severity=result.severity,
+                    expected_degradation=result.expected_degradation,
+                )
+            )
 
     return GuardrailBundle(
         all_passed=all_passed,

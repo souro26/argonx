@@ -9,4 +9,3 @@ hierarchical partial pooling.
 from .experiment import Experiment
 
 __all__ = ["Experiment"]
-

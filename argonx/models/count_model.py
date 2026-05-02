@@ -109,21 +109,17 @@ class HierarchicalPoissonModel(BaseModel):
         self.tau_prior_beta = tau_prior_beta
 
         if priors:
-            _allowed = {
-                'log_lam_prior_mean', 'log_lam_prior_sd', 'tau_prior_beta'
-            }
+            _allowed = {"log_lam_prior_mean", "log_lam_prior_sd", "tau_prior_beta"}
             unknown = set(priors) - _allowed
             if unknown:
-                raise ValueError(
-                    f"Unknown prior keys: {unknown}. Allowed: {_allowed}"
-                )
+                raise ValueError(f"Unknown prior keys: {unknown}. Allowed: {_allowed}")
             self.log_lam_prior_mean = priors.get(
-                'log_lam_prior_mean', self.log_lam_prior_mean
+                "log_lam_prior_mean", self.log_lam_prior_mean
             )
             self.log_lam_prior_sd = priors.get(
-                'log_lam_prior_sd', self.log_lam_prior_sd
+                "log_lam_prior_sd", self.log_lam_prior_sd
             )
-            self.tau_prior_beta = priors.get('tau_prior_beta', self.tau_prior_beta)
+            self.tau_prior_beta = priors.get("tau_prior_beta", self.tau_prior_beta)
 
         self._segment_names: list[str] = []
         self._variant_names_hier: list[str] = []
@@ -176,13 +172,9 @@ class HierarchicalPoissonModel(BaseModel):
         variant_sets = []
         for seg, variants in data.items():
             if not isinstance(variants, dict):
-                raise TypeError(
-                    f"Segment '{seg}' must map to dict[str, np.ndarray]."
-                )
+                raise TypeError(f"Segment '{seg}' must map to dict[str, np.ndarray].")
             if len(variants) < 2:
-                raise ValueError(
-                    f"Segment '{seg}' must have at least two variants."
-                )
+                raise ValueError(f"Segment '{seg}' must have at least two variants.")
             variant_sets.append(frozenset(variants.keys()))
 
             for var, arr in variants.items():
@@ -214,8 +206,7 @@ class HierarchicalPoissonModel(BaseModel):
     def _preflight_checks(self) -> None:
         for seg in self._segment_names:
             min_obs = min(
-                len(self._segment_data[seg][var])
-                for var in self._variant_names_hier
+                len(self._segment_data[seg][var]) for var in self._variant_names_hier
             )
             if min_obs < self.MIN_SEGMENT_SIZE:
                 msg = (
@@ -254,13 +245,19 @@ class HierarchicalPoissonModel(BaseModel):
 
         by_seg = self._extract_by_segment(self._trace, n_draws)
 
-        segment_sizes = np.array([
-            sum(len(self._segment_data[seg][var]) for var in self._variant_names_hier)
-            for seg in self._segment_names
-        ], dtype=float)
+        segment_sizes = np.array(
+            [
+                sum(
+                    len(self._segment_data[seg][var])
+                    for var in self._variant_names_hier
+                )
+                for seg in self._segment_names
+            ],
+            dtype=float,
+        )
         weights = segment_sizes / segment_sizes.sum()
 
-        population = np.einsum('dsv,s->dv', by_seg, weights)
+        population = np.einsum("dsv,s->dv", by_seg, weights)
         return population
 
     def sample_posterior_by_segment(self, n_draws: int = 1000) -> np.ndarray:
@@ -340,9 +337,7 @@ class HierarchicalPoissonModel(BaseModel):
 
         return trace
 
-    def _extract_by_segment(
-        self, trace: az.InferenceData, n_draws: int
-    ) -> np.ndarray:
+    def _extract_by_segment(self, trace: az.InferenceData, n_draws: int) -> np.ndarray:
         """
         Extract lam_seg posterior. Returns (n_draws, n_segments, n_variants).
         """
@@ -392,10 +387,7 @@ class HierarchicalPoissonModel(BaseModel):
 
             low_ess = summary[summary["ess_bulk"] < 400]
             if len(low_ess) > 0:
-                msg = (
-                    f"Low ESS for {len(low_ess)} parameters. "
-                    f"Increase n_draws."
-                )
+                msg = f"Low ESS for {len(low_ess)} parameters. " f"Increase n_draws."
                 self._health_warnings.append(msg)
                 warnings.warn(msg, UserWarning, stacklevel=3)
         except Exception:
@@ -425,9 +417,8 @@ class HierarchicalPoissonModel(BaseModel):
             lam_vals = trace.posterior["lam_seg"].values
             for i, seg in enumerate(self._segment_names):
                 seg_samples = lam_vals[:, :, i, :].flatten()
-                width = (
-                    np.percentile(seg_samples, 97.5)
-                    - np.percentile(seg_samples, 2.5)
+                width = np.percentile(seg_samples, 97.5) - np.percentile(
+                    seg_samples, 2.5
                 )
                 if width > WIDTH_THRESHOLD:
                     msg = (
@@ -464,7 +455,6 @@ class HierarchicalPoissonModel(BaseModel):
         return {
             "health": list(self._health_warnings),
             "segments": {
-                seg: list(msgs)
-                for seg, msgs in self._segment_warnings.items()
+                seg: list(msgs) for seg, msgs in self._segment_warnings.items()
             },
         }

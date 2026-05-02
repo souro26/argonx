@@ -6,9 +6,32 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    name: Ruff Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Run Ruff
+        run: |
+          ruff check .
+          ruff format --check .
+
   fast-tests:
-    name: Fast Tests + Lint (py${{ matrix.python-version }} • ${{ matrix.os }})
+    name: Fast Tests (py${{ matrix.python-version }} • ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+
+    needs: lint
 
     strategy:
       fail-fast: false
@@ -35,12 +58,7 @@ jobs:
         run: |
           python -m pip install -r requirements.txt
           python -m pip install -e .
-          python -m pip install pytest ruff
-
-      - name: Run Ruff (lint & format)
-        run: |
-          ruff check .
-          ruff format --check .
+          python -m pip install pytest
 
       - name: Run fast tests only
         run: |

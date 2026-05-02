@@ -6,3 +6,4 @@ pymc>=5.0.0
 arviz>=0.15.0
 pytest
 ruff
+pre-commit

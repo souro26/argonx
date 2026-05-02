@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import warnings
-from typing import Optional
 from unittest.mock import patch
 
 import numpy as np
@@ -97,8 +96,9 @@ def _call_evaluate(
 
     loss_result, prob_result = _mock_metrics(loss_values, prob_values, best_variant)
 
-    with patch("argonx.sequential.stopping.compute_expected_loss", return_value=loss_result), \
-         patch("argonx.sequential.stopping.compute_prob_best",    return_value=prob_result):
+    with patch(
+        "argonx.sequential.stopping.compute_expected_loss", return_value=loss_result
+    ), patch("argonx.sequential.stopping.compute_prob_best", return_value=prob_result):
         return evaluate_stopping(
             samples=samples,
             variant_names=variant_names,
@@ -579,7 +579,9 @@ class TestCheckFutilityHelper:
         variant = base * (1 + rng.normal(0, 0.0001, 3000))
         samples = np.column_stack([base, variant])
         result = self._futility(
-            samples, VARIANTS_2, "control",
+            samples,
+            VARIANTS_2,
+            "control",
             rope=(-0.05, 0.05),
             threshold=0.10,
         )
@@ -595,12 +597,15 @@ class TestCheckFutilityHelper:
         """Verify futility false when one variant outside ROPE."""
         rng = np.random.default_rng(2)
         base = rng.lognormal(0.0, 0.05, 2000)
-        close  = base * (1 + rng.normal(0, 0.001, 2000))
+        close = base * (1 + rng.normal(0, 0.001, 2000))
         lifted = base * 1.15
         samples = np.column_stack([base, close, lifted])
         result = self._futility(
-            samples, VARIANTS_3, "control",
-            rope=(-0.05, 0.05), threshold=0.50,
+            samples,
+            VARIANTS_3,
+            "control",
+            rope=(-0.05, 0.05),
+            threshold=0.50,
         )
         assert not result
 
@@ -858,8 +863,12 @@ class TestStoppingThresholds:
         """Verify tighter threshold delays stopping."""
         loss_values = {"control": 0.05, "variant_b": 0.008}
         prob_values = {"control": 0.03, "variant_b": 0.97}
-        loose = _call_evaluate(loss_values=loss_values, prob_values=prob_values, loss_threshold=0.01)
-        tight = _call_evaluate(loss_values=loss_values, prob_values=prob_values, loss_threshold=0.005)
+        loose = _call_evaluate(
+            loss_values=loss_values, prob_values=prob_values, loss_threshold=0.01
+        )
+        tight = _call_evaluate(
+            loss_values=loss_values, prob_values=prob_values, loss_threshold=0.005
+        )
         assert loose.safe_to_stop
         assert not tight.safe_to_stop
 
@@ -867,8 +876,12 @@ class TestStoppingThresholds:
         """Verify higher prob minimum delays stopping."""
         loss_values = {"control": 0.05, "variant_b": 0.001}
         prob_values = {"control": 0.10, "variant_b": 0.90}
-        low_bar  = _call_evaluate(loss_values=loss_values, prob_values=prob_values, prob_best_min=0.80)
-        high_bar = _call_evaluate(loss_values=loss_values, prob_values=prob_values, prob_best_min=0.95)
+        low_bar = _call_evaluate(
+            loss_values=loss_values, prob_values=prob_values, prob_best_min=0.80
+        )
+        high_bar = _call_evaluate(
+            loss_values=loss_values, prob_values=prob_values, prob_best_min=0.95
+        )
         assert low_bar.safe_to_stop
         assert not high_bar.safe_to_stop
 
@@ -886,19 +899,27 @@ class TestStoppingReasonMutualExclusion:
             ),
             dict(
                 n_users={"control": 10, "variant_b": 10},
-                burn_in_users=500, min_sample_size=500,
+                burn_in_users=500,
+                min_sample_size=500,
             ),
         ]
         for cfg in configs:
             result = _call_evaluate(**cfg)
-            assert not (result.stopping_reason == "winner" and result.futility_triggered)
+            assert not (
+                result.stopping_reason == "winner" and result.futility_triggered
+            )
             assert result.stopping_reason in ("winner", "futility", "none")
 
     def test_safe_to_stop_true_iff_reason_is_not_none(self):
         """Verify safe_to_stop iff reason is not none."""
-        for cfg in [dict(), dict(loss_values={"control": 0.05, "variant_b": 0.05},
-                                  prob_values={"control": 0.50, "variant_b": 0.50},
-                                  best_variant="variant_b")]:
+        for cfg in [
+            dict(),
+            dict(
+                loss_values={"control": 0.05, "variant_b": 0.05},
+                prob_values={"control": 0.50, "variant_b": 0.50},
+                best_variant="variant_b",
+            ),
+        ]:
             result = _call_evaluate(**cfg)
             if result.safe_to_stop:
                 assert result.stopping_reason != "none"
@@ -922,8 +943,9 @@ class TestTrafficWarningAlwaysAppears:
             loss_values={"control": 0.05, "variant_b": 0.05},
             prob_values={"control": 0.50, "variant_b": 0.50},
         )
-        assert any("imbalance" in w.lower() or "traffic" in w.lower()
-                   for w in result.warnings)
+        assert any(
+            "imbalance" in w.lower() or "traffic" in w.lower() for w in result.warnings
+        )
 
     def test_imbalance_warning_in_warnings_list_when_not_blocking(self):
         """Verify imbalance warning when not blocking."""
@@ -931,18 +953,24 @@ class TestTrafficWarningAlwaysAppears:
             n_users={"control": 3000, "variant_b": 500},
             imbalance_blocks_stopping=False,
         )
-        assert any("imbalance" in w.lower() or "traffic" in w.lower()
-                   for w in result.warnings)
+        assert any(
+            "imbalance" in w.lower() or "traffic" in w.lower() for w in result.warnings
+        )
 
     def test_warnings_is_always_a_list_never_none(self):
         """Verify warnings is always a list."""
         for cfg in [
             dict(),
-            dict(loss_values={"control": 0.05, "variant_b": 0.05},
-                 prob_values={"control": 0.50, "variant_b": 0.50},
-                 best_variant="variant_b"),
-            dict(n_users={"control": 10, "variant_b": 10},
-                 burn_in_users=500, min_sample_size=500),
+            dict(
+                loss_values={"control": 0.05, "variant_b": 0.05},
+                prob_values={"control": 0.50, "variant_b": 0.50},
+                best_variant="variant_b",
+            ),
+            dict(
+                n_users={"control": 10, "variant_b": 10},
+                burn_in_users=500,
+                min_sample_size=500,
+            ),
         ]:
             result = _call_evaluate(**cfg)
             assert isinstance(result.warnings, list)
@@ -975,8 +1003,10 @@ class TestUsersNeededMonotonicity:
         )
         assert close.users_needed is not None
         assert far.users_needed is not None
-        assert (far.users_needed.additional_users["variant_b"] >=
-                close.users_needed.additional_users["variant_b"])
+        assert (
+            far.users_needed.additional_users["variant_b"]
+            >= close.users_needed.additional_users["variant_b"]
+        )
 
     def test_estimate_always_at_least_floor(self):
         """Verify estimate respects floor."""
@@ -1088,8 +1118,15 @@ class TestStoppingChecker:
         defaults.update(kwargs)
         return StoppingChecker(**defaults)
 
-    def _update(self, checker, loss_values=None, prob_values=None, best="variant_b",
-                n_users=None, **kwargs):
+    def _update(
+        self,
+        checker,
+        loss_values=None,
+        prob_values=None,
+        best="variant_b",
+        n_users=None,
+        **kwargs,
+    ):
         """Update checker with mocked metrics.
 
         Parameters
@@ -1122,8 +1159,11 @@ class TestStoppingChecker:
 
         loss_result, prob_result = _mock_metrics(loss_values, prob_values, best)
 
-        with patch("argonx.sequential.stopping.compute_expected_loss", return_value=loss_result), \
-             patch("argonx.sequential.stopping.compute_prob_best", return_value=prob_result):
+        with patch(
+            "argonx.sequential.stopping.compute_expected_loss", return_value=loss_result
+        ), patch(
+            "argonx.sequential.stopping.compute_prob_best", return_value=prob_result
+        ):
             return checker.update(
                 samples=samples,
                 variant_names=variant_names,
@@ -1198,8 +1238,8 @@ class TestStoppingChecker:
     def test_full_trajectory_available_in_each_result(self):
         """Verify full trajectory in each result."""
         checker = self._checker()
-        r1 = self._update(checker)
-        r2 = self._update(checker)
+        _ = self._update(checker)
+        _ = self._update(checker)
         r3 = self._update(checker)
         assert len(r3.trajectory) == 3
         assert r3.trajectory[0].checkpoint_index == 1
@@ -1322,8 +1362,10 @@ class TestRecommendationContent:
             loss_values={"control": 0.05, "variant_b": 0.05},
             prob_values={"control": 0.50, "variant_b": 0.50},
         )
-        assert ("imbalance" in result.recommendation.lower()
-                or "traffic" in result.recommendation.lower())
+        assert (
+            "imbalance" in result.recommendation.lower()
+            or "traffic" in result.recommendation.lower()
+        )
 
     def test_burn_in_message_when_burn_in_gate_blocks(self):
         """Verify burn-in message when gate blocks."""
