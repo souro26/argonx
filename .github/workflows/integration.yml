@@ -1,0 +1,36 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      n_draws:
+        description: "Number of posterior draws"
+        required: false
+        default: "1000"
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+          pip install pytest
+
+      - name: Run integration tests
+        env:
+          N_DRAWS: ${{ inputs.n_draws }}
+        run: |
+          python -m pytest tests/integration -v
