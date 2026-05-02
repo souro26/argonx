@@ -273,7 +273,7 @@ class Results:
             lines.append("")
             lines.append(f"Segment: {seg}")
             lines.append("-" * 40)
-            lines.append(f"  Best variant:   {best}  " f"(P(best)={p_best:.3f})")
+            lines.append(f"  Best variant:   {best}  (P(best)={p_best:.3f})")
             lines.append(f"  State:          {d.state}")
             lines.append(f"  Recommendation: {d.recommendation.upper()}")
             lines.append(f"  Expected lift:  {lift_mean:+.3%}")
@@ -360,7 +360,7 @@ class Results:
                     f"Consider holding these until more data is collected."
                 )
         elif no_ship_segs and not ship_segs:
-            lines.append("No segments support shipping. " "Do not ship.")
+            lines.append("No segments support shipping. Do not ship.")
         else:
             lines.append("All segments inconclusive. Continue experiment.")
 

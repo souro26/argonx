@@ -301,7 +301,7 @@ def _build_recommendation(
         return " ".join(parts)
 
     parts.append(
-        f"CONTINUE EXPERIMENT. '{best_variant}' leads " f"with P(best) = {best_p:.3f}."
+        f"CONTINUE EXPERIMENT. '{best_variant}' leads with P(best) = {best_p:.3f}."
     )
 
     if not gate_states["burn_in"]:
