@@ -12,6 +12,21 @@ class BinaryModel(BaseModel):
     Assumes a Beta-Bernoulli conjugate model for independent binary outcomes.
     """
 
+    def __init__(self, alpha: float = 1.0, beta: float = 1.0):
+        """
+        Initialize BinaryModel with Beta(alpha, beta) prior.
+
+        Parameters
+        ----------
+        alpha : float, optional
+            Alpha parameter of the Beta prior, by default 1.0.
+        beta : float, optional
+            Beta parameter of the Beta prior, by default 1.0.
+        """
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+
     def _validate_input(self, data) -> None:
         """Ensure inputs are valid and binary."""
         super()._validate_input(data)
@@ -20,40 +35,52 @@ class BinaryModel(BaseModel):
             if not np.isin(v, [0, 1]).all():
                 raise ValueError(f"{k} must contain only binary (0/1) values")
 
-    def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+    def sample_posterior(
+        self, n_draws: int = 2000, random_seed: int | None = None
+    ) -> np.ndarray:
         """
         Return posterior samples using a fully conjugated Beta-Bernoulli update.
 
-        For each variant, assumes a uniform Beta(1, 1) prior and updates it via the exact
-        analytical conjugate posterior Beta(1 + successes, 1 + failures). This allows for
-        extremely rapid sampling without Hamiltonial Monte Carlo.
+        For each variant, uses the exact analytical conjugate posterior
+        Beta(alpha + successes, beta + failures).
 
         Parameters
         ----------
         n_draws : int, optional
             Number of posterior draws per variant, by default 2000.
+        random_seed : int, optional
+            Random seed for reproducibility, by default None.
 
         Returns
         -------
         np.ndarray
-            2D array of localized posterior draws (`n_draws` rows by variants columns).
+            2D array of localized posterior draws (n_draws rows by variants columns).
         """
-        if self.variant_names is None:
+        if n_draws < 0:
+            raise ValueError("n_draws must be non-negative")
+
+        if self.variant_names is None or self.data is None:
             raise ValueError("Call fit() before sampling")
 
-        samples = []
+        n_variants = len(self.variant_names)
+        if n_draws == 0:
+            return np.empty((0, n_variants))
 
-        for variant in self.variant_names:
+        rng = np.random.default_rng(seed=random_seed)
+        samples = np.zeros((n_draws, n_variants))
+
+        for i, variant in enumerate(self.variant_names):
             data = self.data[variant]
 
             successes = np.sum(data)
-            failures = data.shape[0] - successes
+            n_obs = len(data)
 
-            draws = np.random.beta(1 + successes, 1 + failures, size=n_draws)
+            alpha_post = self.alpha + successes
+            beta_post = self.beta + n_obs - successes
 
-            samples.append(draws)
+            samples[:, i] = rng.beta(alpha_post, beta_post, size=n_draws)
 
-        return np.column_stack(samples)
+        return samples
 
 
 class HierarchicalBinaryModel(BaseModel):

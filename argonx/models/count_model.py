@@ -25,51 +25,52 @@ class PoissonModel(BaseModel):
             if not np.issubdtype(v.dtype, np.integer):
                 raise ValueError(f"{k} must contain integer values")
 
-    def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+    def sample_posterior(
+        self, n_draws: int = 2000, random_seed: int | None = None
+    ) -> np.ndarray:
         """
         Return posterior samples for the Poisson rate parameter.
+
+        For each variant, uses the exact analytical conjugate posterior
+        Gamma(lam_prior_alpha + sum(data), lam_prior_beta + len(data)).
 
         Parameters
         ----------
         n_draws : int, optional
             Number of posterior draws per variant, by default 2000.
+        random_seed : int, optional
+            Random seed for reproducibility, by default None.
 
         Returns
         -------
         np.ndarray
             Array of posterior samples of shape (n_draws, n_variants).
         """
+        if n_draws < 0:
+            raise ValueError("n_draws must be non-negative")
+
         if self.data is None or self.variant_names is None:
             raise ValueError("Call fit() before sampling")
 
+        n_variants = len(self.variant_names)
         if n_draws == 0:
-            return np.empty((0, len(self.variant_names)))
+            return np.empty((0, n_variants))
 
-        samples = []
+        rng = np.random.default_rng(seed=random_seed)
+        samples = np.zeros((n_draws, n_variants))
 
-        for variant in self.variant_names:
+        for i, variant in enumerate(self.variant_names):
             data = self.data[variant]
+            s = np.sum(data)
+            n = len(data)
 
-            with pm.Model():
-                lam = pm.Gamma(
-                    "lam",
-                    alpha=self.lam_prior_alpha,
-                    beta=self.lam_prior_beta,
-                )
-                pm.Poisson("obs", mu=lam, observed=data)
+            alpha_post = self.lam_prior_alpha + s
+            beta_post = self.lam_prior_beta + n
 
-                trace = pm.sample(
-                    draws=n_draws,
-                    tune=min(1000, n_draws),
-                    chains=1,
-                    progressbar=False,
-                    random_seed=42,
-                )
+            # numpy's gamma uses scale = 1.0 / beta
+            samples[:, i] = rng.gamma(alpha_post, 1.0 / beta_post, size=n_draws)
 
-            lam_samples = trace.posterior["lam"].values.flatten()
-            samples.append(lam_samples)
-
-        return np.column_stack(samples)
+        return samples
 
 
 class HierarchicalPoissonModel(BaseModel):

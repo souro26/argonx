@@ -25,7 +25,9 @@ class LogNormalModel(BaseModel):
             if (v <= 0).any():
                 raise ValueError(f"{k} must contain only positive values")
 
-    def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+    def sample_posterior(
+        self, n_draws: int = 2000, random_seed: int | None = None
+    ) -> np.ndarray:
         """
         Return posterior samples for the arithmetic mean.
 
@@ -33,6 +35,8 @@ class LogNormalModel(BaseModel):
         ----------
         n_draws : int, optional
             Number of posterior draws per variant, by default 2000.
+        random_seed : int, optional
+            Random seed for reproducibility, by default None.
 
         Returns
         -------
@@ -60,7 +64,7 @@ class LogNormalModel(BaseModel):
                     tune=min(1000, n_draws),
                     chains=1,
                     progressbar=False,
-                    random_seed=42,
+                    random_seed=random_seed,
                 )
 
             mu_samples = trace.posterior["mu"].values.flatten()

@@ -329,11 +329,15 @@ class TestBinaryModel:
         model = BinaryModel()
         data = {"A": np.array([1, 0, 1]), "B": np.array([0, 1, 1])}
         model.fit(data)
-        np.random.seed(42)
-        s1 = model.sample_posterior(500)
-        np.random.seed(42)
-        s2 = model.sample_posterior(500)
+        # Using explicit seed should be reproducible
+        s1 = model.sample_posterior(500, random_seed=42)
+        s2 = model.sample_posterior(500, random_seed=42)
         assert np.allclose(s1, s2)
+
+        # Without seed, should be different each time
+        s3 = model.sample_posterior(500)
+        s4 = model.sample_posterior(500)
+        assert not np.allclose(s3, s4)
 
 
 class TestPoissonModel:
@@ -424,6 +428,19 @@ class TestPoissonModel:
         }
         model.fit(data)
         assert model.sample_posterior(500).shape == (500, 2)
+
+    def test_reproducibility(self):
+        """Ensures deterministic sampling via explicit seed."""
+        model = PoissonModel()
+        data = {"A": np.array([1, 2, 3]), "B": np.array([2, 3, 4])}
+        model.fit(data)
+        s1 = model.sample_posterior(300, random_seed=42)
+        s2 = model.sample_posterior(300, random_seed=42)
+        assert np.allclose(s1, s2)
+
+        s3 = model.sample_posterior(300)
+        s4 = model.sample_posterior(300)
+        assert not np.allclose(s3, s4)
 
 
 class TestGaussianModel:
@@ -682,13 +699,17 @@ class TestLogNormalModel:
         assert (model.sample_posterior(500) > 0).all()
 
     def test_reproducibility(self):
-        """Ensures deterministic sampling via PyMC seed."""
+        """Ensures deterministic sampling via explicit seed."""
         model = LogNormalModel()
         data = {"A": np.array([1.0, 2.0, 3.0]), "B": np.array([2.0, 3.0, 4.0])}
         model.fit(data)
-        s1 = model.sample_posterior(300)
-        s2 = model.sample_posterior(300)
+        s1 = model.sample_posterior(300, random_seed=42)
+        s2 = model.sample_posterior(300, random_seed=42)
         assert np.allclose(s1, s2)
+
+        s3 = model.sample_posterior(300)
+        s4 = model.sample_posterior(300)
+        assert not np.allclose(s3, s4)
 
 
 class TestHierarchicalBinaryModel:
