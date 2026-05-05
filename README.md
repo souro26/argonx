@@ -6,18 +6,9 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-argonx is a Bayesian A/B testing engine that tells you what to do when such an effect exists.
+**argonx** is a Bayesian decision engine for A/B experiments.
 
-Most tools give you p-values.
-argonx gives you decisions:
-
-• Which variant to ship
-• How much you lose if you're wrong
-• Whether it's safe to stop early
-
-Built for real-world experiments where tradeoffs matter.
-
-> If you've ever asked “should we ship this?” and got a p-value instead of an answer, this is for you.
+It handles inference, multi-metric risk management, hierarchical segment-aware analysis, and sequential stopping. Feed it your data, tell it what matters, and it surfaces everything you need to make the right call.
 
 ---
 
@@ -57,7 +48,7 @@ result.summary()
 result.plot()
 ```
 
-Ratio metrics via callable:
+Ratio metrics via callable, no extra classes needed:
 
 ```python
 experiment = Experiment(
@@ -69,7 +60,7 @@ experiment = Experiment(
 )
 ```
 
-Segment-aware hierarchical inference:
+Segment-aware hierarchical inference, one extra argument:
 
 ```python
 experiment = Experiment(
@@ -82,59 +73,29 @@ experiment = Experiment(
 )
 
 result = experiment.run()
-result.summary()
-result.segment_summary()
+result.summary()          # aggregate, population-level
+result.segment_summary()  # per-segment decisions, cross-segment conflict detection
 ```
-
----
-
-## Why argonx?
-
-Because raw posteriors don’t help you decide.
-
-argonx turns Bayesian inference into clear, decision-ready output:
-
-```python
-result.summary()
-```
-
-```
-Best Variant: variant_b
-P(best): 0.971
-
-Expected loss if wrong: 0.0009
-CVaR: 0.0021
-
-Guardrail violation detected → REVIEW REQUIRED
-```
-
-No interpretation layer needed. The tradeoffs are explicit.
-
----
-
-## Who is this for?
-
-* Startups running A/B tests without expensive tools
-* Engineers who want interpretable decisions, not black-box stats
-* Teams dealing with tradeoffs (conversion vs latency, revenue vs churn)
 
 ---
 
 ## What It Computes
 
-argonx focuses on decision-making under uncertainty and not just statistical significance.
+Most testing frameworks answer *is there an effect?* argonx answers what you should do about it, and how much you lose if you get it wrong.
 
-| Metric                  | What it answers                                                    |
-| ----------------------- | ------------------------------------------------------------------ |
-| **P(variant is best)**  | Posterior probability of being the true winner across all variants |
-| **Expected loss**       | Average downside if you ship the wrong variant                     |
-| **CVaR**                | Tail risk, worst-case loss when things go wrong                   |
-| **ROPE**                | Whether the effect is practically meaningful                       |
-| **HDI**                 | Posterior interval of the effect                                   |
-| **Joint probability**   | Probability all business conditions hold simultaneously            |
-| **Composite score**     | Multi-metric business impact computed from posterior draws         |
-| **Guardrail conflict**  | Detects tradeoffs (e.g. conversion ↑ but latency ↑)                |
-| **Sequential stopping** | Stops when risk is low enough, not when sample size is arbitrary  |
+A p-value tells you whether the observed difference is unlikely under the null. It does not tell you which variant to ship. argonx computes the quantities that actually drive that decision:
+
+| Metric | What it answers |
+|---|---|
+| **P(variant is best)** | Posterior probability of being the true winner, computed via simultaneous argmax across all N variants. Not pairwise. |
+| **Expected loss** | Average loss if you ship the wrong variant, integrated over the full posterior. Not a point estimate. |
+| **CVaR** | Expected loss in the worst-case tail. Catches cases where average loss looks fine but tail outcomes are catastrophic. |
+| **ROPE** | Is the effect large enough to matter in practice? A statistically real effect can still be business-irrelevant. ROPE separates these. |
+| **HDI** | The actual posterior probability interval. The lift falls inside this range with 95% posterior probability. |
+| **Joint probability** | P(all business conditions satisfied simultaneously), not independent per-metric checks that miss correlations. |
+| **Composite score** | Weighted multi-metric business impact, computed draw-by-draw from posteriors, not from means. |
+| **Guardrail conflict** | When the primary metric improves and a guardrail degrades, the framework surfaces the conflict and stops there. No arbitrary resolution. |
+| **Sequential stopping** | Stop when expected loss drops below your threshold, not when a fixed sample size is reached. |
 
 ---
 
@@ -149,7 +110,7 @@ PRIMARY METRIC
 ----------------------------------------
 Best Variant: variant_b
 Expected lift:    +4.3% (95% HDI: +1.0% to +7.0%)
-P(best): 0.971
+P(best) across all variants: 0.971
 
 RISK
 ----------------------------------------
@@ -164,12 +125,13 @@ P(practical effect): 0.941
 
 GUARDRAILS
 ----------------------------------------
-  page_load_ms    [FAIL]  P(degraded)=0.912
+  page_load_ms    [FAIL]  variant=variant_b  P(degraded)=0.912  threshold=0.100
 
-GUARDRAIL CONFLICT DETECTED
+GUARDRAIL CONFLICTS DETECTED
 ----------------------------------------
-Primary metric improves, but guardrail degrades.
-Automatic decision blocked.
+Strong evidence for variant_b on primary metric.
+Guardrail violation on page_load_ms with 91.2% probability.
+Framework cannot resolve this tradeoff. Human review required.
 
 ============================================================
 DECISION
@@ -177,26 +139,39 @@ DECISION
 State:          conflict
 Recommendation: REVIEW REQUIRED
 Confidence:     low
+
+Reasoning:
+  - P(best) exceeds strong threshold
+  - Expected loss below configured maximum
+  - Guardrail violation: page_load_ms cannot be resolved automatically
 ============================================================
 ```
 
-The framework does not make the decision.
-It makes the tradeoffs explicit so you can.
+The framework does not make the decision. It makes the right decision obvious.
 
 ---
 
 ## Models
 
-| Model       | Use case                       | Data type       |
-| ----------- | ------------------------------ | --------------- |
-| `binary`    | Conversion rate, click-through | 0/1             |
-| `lognormal` | Revenue, order value           | Positive skewed |
-| `gaussian`  | Latency, scores                | Continuous      |
-| `studentt`  | Robust to outliers             | Heavy-tailed    |
-| `poisson`   | Counts, events                 | Integer         |
+| Model | Use case | Data type |
+|---|---|---|
+| `binary` | Conversion rate, click-through, churn | 0/1 outcomes |
+| `lognormal` | Revenue, order value, session duration | Right-skewed positive continuous |
+| `gaussian` | Latency, load time, scores | Symmetric continuous |
+| `studentt` | Same as gaussian, robust to outliers | Symmetric continuous with heavy tails |
+| `poisson` | Events per user, purchases per session | Count data |
 
-Hierarchical modeling is enabled automatically via `segment_col`.
-Thin segments borrow strength without collapsing differences.
+Every model has a flat and hierarchical variant. Flat is the default. Hierarchical is selected automatically when `segment_col` is set. Partial pooling handles thin segments by borrowing strength from larger ones without collapsing differences that are real.
+
+Guardrail metrics can use a different model than the primary:
+
+```python
+experiment = Experiment(
+    ...
+    model='binary',
+    guardrail_models={'page_load_ms': 'lognormal'},
+)
+```
 
 ---
 
@@ -219,43 +194,51 @@ status = checker.update(
 )
 
 print(status.safe_to_stop)
-print(status.users_needed)
+print(status.users_needed)  # estimated additional users needed if not safe
 
-checker.plot_trajectory()
+checker.plot_trajectory()   # P(best) and expected loss over time
 ```
 
-argonx stops when expected loss is low enough, not when arbitrary sample sizes are reached.
+Frequentist peeking inflates false positive rates. Bayesian expected-loss stopping does not. argonx stops when evidence is strong enough, and tells you how far you are from that threshold when it is not.
 
 ---
 
 ## Examples
 
-Worked examples in [`examples/`](examples/):
+Five worked examples across different industries and model types in [`examples/`](examples/):
 
-| Notebook               | Scenario                |
-| ---------------------- | ----------------------- |
-| Checkout redesign      | Guardrail conflict      |
-| SaaS pricing           | Early stopping          |
-| Clinical trial         | Heavy-tailed modeling   |
-| Gaming matchmaking     | Multi-variant selection |
-| Mobile personalisation | Hierarchical conflict   |
+| Notebook | Scenario | Key feature |
+|---|---|---|
+| `01_ecommerce_checkout.ipynb` | Checkout redesign | Guardrail conflict: conversion up, load time up |
+| `02_saas_revenue_sequential.ipynb` | SaaS pricing page | Sequential stopping fires at week 2 of 4 |
+| `03_clinical_trial.ipynb` | Drug dosage protocol | StudentT vs Gaussian on data with outliers |
+| `04_gaming_matchmaking.ipynb` | Matchmaking algorithm | 3-way experiment, simultaneous argmax |
+| `05_mobile_personalisation.ipynb` | Fintech personalisation | Hierarchical: segment conflict, thin-segment pooling |
 
 ---
 
 ## Running Tests
 
 ```bash
+# unit tests only, no MCMC, fast
 pytest tests/unit/
+
+# statistical property verification, no MCMC
 pytest tests/math/
+
+# full suite including MCMC integration tests
 pytest tests/
 ```
+
+Three tiers matching the CI pipeline. Unit tests on every push. Math tests on every PR. Integration tests on merge to main.
 
 ---
 
 ## Contributing
 
-Open an issue before major changes.
-Run tests before PR.
+Open an issue before submitting anything beyond a bug fix. PRs are welcome.
+
+Before opening a PR, run `pytest tests/unit/ tests/math/` and confirm everything passes. For decision engine changes, add a test to `tests/math/test_decision_sims.py` that verifies the statistical property. For new model variants, add tests to `tests/integration/test_models.py`.
 
 ---
 
