@@ -6,7 +6,7 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-argonx is a Bayesian A/B testing engine that tells you what to do — not just whether an effect exists.
+argonx is a Bayesian A/B testing engine that tells you what to do when such an effect exists.
 
 Most tools give you p-values.
 argonx gives you decisions:
@@ -17,7 +17,7 @@ argonx gives you decisions:
 
 Built for real-world experiments where tradeoffs matter.
 
-> If you've ever asked “should we ship this?” and got a p-value instead of an answer — this is for you.
+> If you've ever asked “should we ship this?” and got a p-value instead of an answer, this is for you.
 
 ---
 
@@ -122,19 +122,19 @@ No interpretation layer needed. The tradeoffs are explicit.
 
 ## What It Computes
 
-argonx focuses on decision-making under uncertainty — not just statistical significance.
+argonx focuses on decision-making under uncertainty and not just statistical significance.
 
 | Metric                  | What it answers                                                    |
 | ----------------------- | ------------------------------------------------------------------ |
 | **P(variant is best)**  | Posterior probability of being the true winner across all variants |
 | **Expected loss**       | Average downside if you ship the wrong variant                     |
-| **CVaR**                | Tail risk — worst-case loss when things go wrong                   |
+| **CVaR**                | Tail risk, worst-case loss when things go wrong                   |
 | **ROPE**                | Whether the effect is practically meaningful                       |
 | **HDI**                 | Posterior interval of the effect                                   |
 | **Joint probability**   | Probability all business conditions hold simultaneously            |
 | **Composite score**     | Multi-metric business impact computed from posterior draws         |
 | **Guardrail conflict**  | Detects tradeoffs (e.g. conversion ↑ but latency ↑)                |
-| **Sequential stopping** | Stops when risk is low enough — not when sample size is arbitrary  |
+| **Sequential stopping** | Stops when risk is low enough, not when sample size is arbitrary  |
 
 ---
 
@@ -224,7 +224,7 @@ print(status.users_needed)
 checker.plot_trajectory()
 ```
 
-argonx stops when expected loss is low enough — not when arbitrary sample sizes are reached.
+argonx stops when expected loss is low enough, not when arbitrary sample sizes are reached.
 
 ---
 
