@@ -428,7 +428,7 @@ class Results:
             control=d.metrics.loss.control,
             prob_best=d.metrics.prob_best.probabilities,
             expected_loss=d.metrics.loss.expected_loss,
-            guardrail_results=d.guardrails.results,
+            guardrail_results=d.guardrails.guardrails,
             cvar_loss=d.metrics.cvar.cvar,
             rope_bounds=rope_bounds,
             metric_name=metric_name,
