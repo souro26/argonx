@@ -20,8 +20,8 @@ pip install argonx
 
 ```bash
 # development install
-git clone https://github.com/souro26/bayesian-a-b-testing.git
-cd bayesian-a-b-testing
+git clone https://github.com/souro26/argonx.git
+cd argonx
 pip install -e .
 ```
 
