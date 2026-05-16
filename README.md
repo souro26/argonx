@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/souro26/bayesian-a-b-testing/actions/workflows/ci.yml/badge.svg)
 ![PyPI](https://img.shields.io/pypi/v/argonx.svg)
-![Downloads](https://img.shields.io/pypi/dm/argonx.svg)
+![Downloads](https://static.pepy.tech/personalized-badge/argonx?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
