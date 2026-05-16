@@ -523,6 +523,11 @@ class Experiment:
         are model strings from the registry (e.g., 'lognormal', 'gaussian').
         If a guardrail is not listed here, the primary model is used as fallback.
         Example: {'page_load_ms': 'lognormal', 'error_rate': 'binary'}
+    config : dict | None, optional
+        Default engine configuration applied to every call to run(). Keys and
+        values are the same as the config argument on run(). Any config passed
+        directly to run() is merged on top of this, with run()-level values
+        taking precedence.
     """
 
     def __init__(
@@ -537,6 +542,7 @@ class Experiment:
         control: str | None = None,
         priors: dict | None = None,
         guardrail_models: dict[str, str] | None = None,
+        config: dict | None = None,
     ):
         self.data = data
         self.variant_col = variant_col
@@ -548,6 +554,8 @@ class Experiment:
         self.control = control
         self.priors = priors
         self.guardrail_models = guardrail_models or {}
+        self.config = config or {}
+        _validate_config(self.config)
 
         _validate_inputs(
             data,
@@ -601,10 +609,11 @@ class Experiment:
         Results
             Container holding experiment outcome and engine diagnostic.
         """
-        config = config or {}
-        _validate_config(config)
+        # merge: instance-level config is the base, run()-level config overrides
+        merged_config = {**self.config, **(config or {})}
+        _validate_config(merged_config)
 
-        full_config = {**_DEFAULT_CONFIG, **config}
+        full_config = {**_DEFAULT_CONFIG, **merged_config}
 
         if rope_bounds is None:
             rope_bounds = (-min_effect, min_effect)

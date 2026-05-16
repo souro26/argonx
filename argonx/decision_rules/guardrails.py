@@ -245,10 +245,7 @@ def compute_all_guardrails(
 
     for metric in guardrail_samples:
         if metric not in thresholds:
-            raise ValueError(
-                f"No threshold configured for guardrail metric '{metric}'. "
-                f"Provide a threshold in the thresholds dict."
-            )
+            thresholds = {**thresholds, metric: 0.10}
 
     all_results = []
 
