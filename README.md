@@ -41,6 +41,8 @@ experiment = Experiment(
     model='lognormal',
     guardrail_models={'page_load_ms': 'gaussian'},
     control='control',
+    # Maximum tolerated probability that the guardrail metric got worse.
+    config={'guardrail_thresholds': {'page_load_ms': 0.1}},
 )
 
 result = experiment.run()
