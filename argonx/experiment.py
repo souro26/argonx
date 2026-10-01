@@ -620,9 +620,8 @@ class Experiment:
 
         full_config["rope_bounds"] = rope_bounds
 
-        override_keys = set(self.lower_is_better) & set(
-            config.get("lower_is_better", {})
-        )
+        run_lower_is_better = (config or {}).get("lower_is_better", {})
+        override_keys = set(self.lower_is_better) & set(run_lower_is_better)
         if override_keys:
             warnings.warn(
                 f"Overriding lower_is_better for: {sorted(override_keys)}",
@@ -631,7 +630,7 @@ class Experiment:
 
         full_config["lower_is_better"] = {
             **self.lower_is_better,
-            **config.get("lower_is_better", {}),
+            **run_lower_is_better,
         }
 
         if composite_weights:
